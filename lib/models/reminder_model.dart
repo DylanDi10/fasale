@@ -1,9 +1,9 @@
 class Recordatorio {
   final int? id;
   final String titulo;
-  final DateTime fechaHora; // Ojo: Aquí usamos DateTime
+  final DateTime fechaHora; 
   final int clienteId;
-  final bool completado; // 1 es true, 0 es false
+  final bool completado; 
 
   Recordatorio({
     this.id,
@@ -17,9 +17,9 @@ class Recordatorio {
     return {
       'id': id,
       'titulo': titulo,
-      'fecha_hora': fechaHora.toIso8601String(), // Convierte Fecha -> Texto
+      'fecha_hora': fechaHora.toIso8601String(), 
       'cliente_id': clienteId,
-      'completado': completado ? 1 : 0, // Convierte Boolean -> Número
+      'completado': completado ? 1 : 0,
     };
   }
 
@@ -27,9 +27,9 @@ class Recordatorio {
     return Recordatorio(
       id: map['id'],
       titulo: map['titulo'],
-      fechaHora: DateTime.parse(map['fecha_hora']), // Convierte Texto -> Fecha
+      fechaHora: DateTime.parse(map['fecha_hora']), 
       clienteId: map['cliente_id'],
-      completado: map['completado'] == 1, // Convierte Número -> Boolean
+      completado: map['completado'] == 1, 
     );
   }
 }

@@ -1,4 +1,4 @@
-import 'dart:convert'; // Necesario para jsonEncode y jsonDecode
+import 'dart:convert'; 
 
 class Cotizacion {
   final int? id;
@@ -6,7 +6,7 @@ class Cotizacion {
   final int vendedorId;
   final DateTime fecha;
   final double total;
-  final List<dynamic> productos; // Guardaremos la lista de items
+  final List<dynamic> productos; 
 
   Cotizacion({
     this.id,
@@ -24,7 +24,6 @@ class Cotizacion {
       'vendedor_id': vendedorId,
       'fecha': fecha.toIso8601String(),
       'total': total,
-      // TRUCO: Convertimos la lista de productos a un TEXTO JSON
       'productos_json': jsonEncode(productos), 
     };
   }
@@ -36,7 +35,6 @@ class Cotizacion {
       vendedorId: map['vendedor_id'],
       fecha: DateTime.parse(map['fecha']),
       total: map['total'],
-      // TRUCO: Convertimos el TEXTO JSON de vuelta a una Lista
       productos: jsonDecode(map['productos_json']),
     );
   }

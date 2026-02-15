@@ -7,22 +7,17 @@ import '../models/client_model.dart';
 import 'package:intl/intl.dart';
 
 class PdfGenerator {
-  // Función principal que llamaremos desde la pantalla
   static Future<void> generarPDF(Cotizacion venta, Cliente cliente) async {
     final pdf = pw.Document();
 
-    // Cargamos una fuente (opcional, pero se ve mejor)
-    // Usamos la fuente estándar de Android/iOS
     final font = await PdfGoogleFonts.nunitoExtraLight();
 
-    // Agregamos una página al documento
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         theme: pw.ThemeData.withFont(base: font),
         build: (pw.Context context) {
           return [
-            //  CABECERA 
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
@@ -46,7 +41,6 @@ class PdfGenerator {
             ),
             pw.Divider(),
 
-            //  DATOS DEL CLIENTE
             pw.Container(
               margin: const pw.EdgeInsets.symmetric(vertical: 20),
               child: pw.Column(
@@ -65,7 +59,6 @@ class PdfGenerator {
               ),
             ),
 
-            //  TABLA DE PRODUCTOS
             pw.Table.fromTextArray(
               context: context,
               headerDecoration: pw.BoxDecoration(color: PdfColors.grey300),
@@ -95,7 +88,6 @@ class PdfGenerator {
 
             pw.SizedBox(height: 20),
 
-            // 4. TOTAL FINAL
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.end,
               children: [
@@ -118,8 +110,7 @@ class PdfGenerator {
               ],
             ),
 
-            pw.Spacer(), // Empuja lo siguiente al final de la hoja
-            // 5. PIE DE PÁGINA
+            pw.Spacer(), 
             pw.Center(
               child: pw.Text(
                 "Gracias por su compra - Generado por Sistema FASALE",

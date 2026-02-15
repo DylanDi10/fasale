@@ -13,7 +13,6 @@ class Cliente {
     this.direccion,
   });
 
-  // Para guardar en DB
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -24,7 +23,6 @@ class Cliente {
     };
   }
 
-  // Para leer de DB
   factory Cliente.fromMap(Map<String, dynamic> map) {
     return Cliente(
       id: map['id'],

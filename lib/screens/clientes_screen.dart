@@ -47,7 +47,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                 margin: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 child: ListTile(
                   leading: CircleAvatar(
-                    child: Text(cliente.nombre[0].toUpperCase()), // Inicial del nombre
+                    child: Text(cliente.nombre[0].toUpperCase()),
                     backgroundColor: Colors.orange,
                     foregroundColor: Colors.white,
                   ),
@@ -56,13 +56,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   trailing: IconButton(
                     icon: Icon(Icons.delete, color: Colors.red),
                     onPressed: () async {
-                      // Confirmación antes de borrar (Opcional pero recomendado)
                       await DatabaseHelper.instance.eliminarCliente(cliente.id!);
                       _cargarClientes();
                     },
                   ),
                   onTap: () async {
-                    // Navegar a Editar
                     await Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -82,7 +80,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
         backgroundColor: Colors.orange,
         child: Icon(Icons.person_add),
         onPressed: () async {
-          // Navegar a Crear Nuevo
           await Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => ClienteFormScreen()),

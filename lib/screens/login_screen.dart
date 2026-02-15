@@ -9,41 +9,33 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // Controladores: Son como las "antenas" que leen lo que escribe el usuario
   final _userController = TextEditingController();
   final _passController = TextEditingController();
   
-  // Clave del formulario: Para validar que no estén vacíos
   final _formKey = GlobalKey<FormState>();
   
-  bool _isLoading = false; // Para mostrar un circulito de carga
+  bool _isLoading = false; 
   String _errorMessage = '';
 
-  // Función que se ejecuta al presionar "Ingresar"
   void _login() async {
-    // 1. Validar que los campos no estén vacíos
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
-      _isLoading = true; // Empieza a girar el circulito
+      _isLoading = true; 
       _errorMessage = '';
     });
 
-    // 2. LLAMADA A LA BASE DE DATOS (Tu código en acción)
-    // Le preguntamos al Gerente si este usuario existe
     Usuario? usuarioEncontrado = await DatabaseHelper.instance.login(
       _userController.text.trim(), 
       _passController.text.trim()
     );
 
     setState(() {
-      _isLoading = false; // Deja de girar
+      _isLoading = false; 
     });
 
-    // 3. Tomar decisiones
     if (usuarioEncontrado != null) {
-      // ¡ÉXITO! Navegar a la pantalla principal
-      // Usamos pushReplacement para que no pueda volver atrás al Login
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -51,7 +43,6 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } else {
-      // ¡ERROR! Mostrar mensaje rojo
       setState(() {
         _errorMessage = 'Usuario o contraseña incorrectos';
       });
@@ -61,7 +52,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center( // Centra todo en la pantalla
+      body: Center( 
         child: SingleChildScrollView(
           padding: EdgeInsets.all(32),
           child: Form(
@@ -104,12 +95,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Text(_errorMessage, style: TextStyle(color: Colors.red)),
                   ),
 
-                // BOTÓN DE INGRESAR
                 SizedBox(
-                  width: double.infinity, // Ocupa todo el ancho
+                  width: double.infinity, 
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _login, // Si carga, deshabilita el botón
+                    onPressed: _isLoading ? null : _login,
                     child: _isLoading 
                       ? CircularProgressIndicator(color: Colors.white) 
                       : Text('INGRESAR', style: TextStyle(fontSize: 18)),

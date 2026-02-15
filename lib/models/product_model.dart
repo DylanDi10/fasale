@@ -1,5 +1,5 @@
 class Producto {
-  final int? id; // Es '?' porque al crear uno nuevo, aún no tiene ID (la DB se lo pone)
+  final int? id; 
   final String nombre;
   final String? descripcion;
   final double precio;
@@ -17,8 +17,7 @@ class Producto {
     this.rutaImagen,
   });
 
-  // 1. TRADUCTOR: De Objeto a Mapa (Para GUARDAR en SQLite)
-  // Convierte tu clase en un diccionario simple que SQLite entiende.
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -31,8 +30,7 @@ class Producto {
     };
   }
 
-  // 2. TRADUCTOR: De Mapa a Objeto (Para LEER de SQLite)
-  // Recibe los datos feos de la DB y te devuelve un Producto bonito para usar en Flutter.
+
   factory Producto.fromMap(Map<String, dynamic> map) {
     return Producto(
       id: map['id'],

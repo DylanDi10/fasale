@@ -7,20 +7,17 @@ import '../models/client_model.dart';
 
 
 class DatabaseHelper {
-  // Patrón Singleton: Para que solo haya UNA conexión a la base de datos en toda la app
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
 
   DatabaseHelper._init();
 
-  // Si la base de datos ya existe, la devuelve. Si no, la crea.
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDB('sewing_sales.db');
     return _database!;
   }
 
-  // Configuración inicial (nombre del archivo y versión)
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
@@ -28,14 +25,13 @@ class DatabaseHelper {
     return await openDatabase(path, version: 1, onCreate: _createDB);
   }
 
-  // Aquí creamos las tablas. Esto se ejecuta SOLO la primera vez que abres la app.
   Future _createDB(Database db, int version) async {
     const idType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
     const textType = 'TEXT NOT NULL';
     const intType = 'INTEGER NOT NULL';
     const realType = 'REAL NOT NULL';
 
-    // 1. Tabla USUARIOS (Para el Login)
+    // Tabla USUARIOS
     await db.execute('''
       CREATE TABLE usuarios ( 
         id $idType, 
@@ -45,7 +41,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 2. Tabla PRODUCTOS (Inventario)
+    // Tabla PRODUCTOS
     await db.execute('''
       CREATE TABLE productos ( 
         id $idType, 
@@ -58,7 +54,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 3. Tabla CLIENTES (Tu cartera)
+    // Tabla CLIENTES
     await db.execute('''
       CREATE TABLE clientes ( 
         id $idType, 
@@ -69,9 +65,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 4. Tabla COTIZACIONES (Historial de Ventas)
-    // Truco para ahorrar tiempo: 'productos_json' guardará toda la lista de productos
-    // en formato texto (JSON) en lugar de crear otra tabla compleja de relaciones.
+    // Tabla COTIZACIONES
     await db.execute('''
       CREATE TABLE cotizaciones ( 
         id $idType, 
@@ -85,9 +79,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 5. Tabla RECORDATORIOS (Para tu Calendario)
-    // 'fecha_hora': Guardaremos formato ISO8601 (ej: "2026-02-13T16:00:00")
-    // Es lo más fácil para que el calendario lo lea.
+    // Tabla RECORDATORIOS 
     await db.execute('''
       CREATE TABLE recordatorios ( 
         id $idType, 
@@ -99,7 +91,6 @@ class DatabaseHelper {
       )
     ''');
     
-    // OPCIONAL: Insertar usuario Admin por defecto para poder entrar
     await db.insert('usuarios', {
       'username': 'admin',
       'password': 'contra', 
@@ -107,7 +98,6 @@ class DatabaseHelper {
     });
   }
 
-  // Método para cerrar la base de datos (buenas prácticas)
   Future close() async {
     final db = await instance.database;
     db.close();
@@ -115,7 +105,6 @@ class DatabaseHelper {
 
 
 
-  // --- MÉTODOS DE USUARIO ---
   Future<int> registrarUsuario(Usuario user) async {
     final db = await instance.database;
     return await db.insert('usuarios', user.toMap());
@@ -136,7 +125,6 @@ class DatabaseHelper {
     }
   }
 
-  // --- MÉTODOS DE PRODUCTOS ---
   Future<int> insertarProducto(Producto producto) async {
     final db = await instance.database;
     return await db.insert('productos', producto.toMap());
@@ -177,7 +165,6 @@ class DatabaseHelper {
     );
   }
 
-  // --- MÉTODOS DE CLIENTES ---
   Future<int> insertarCliente(Cliente cliente) async {
     final db = await instance.database;
     return await db.insert('clientes', cliente.toMap());
@@ -208,23 +195,17 @@ class DatabaseHelper {
     );
   }
 
-  // --- MÉTODOS DE VENTAS (COTIZACIONES) ---
 
-  // Nueva Venta con Transacción (Seguridad total)
   Future<int> crearVenta(Cotizacion cotizacion) async {
     final db = await instance.database;
     
     return await db.transaction((txn) async {
-      // 1. Guardar la cabecera de la venta (Quién compró, fecha, total)
       int idVenta = await txn.insert('cotizaciones', cotizacion.toMap());
 
-      // 2. Recorrer los productos vendidos y restar stock
-      // La lista 'productos' viene así: [{'id': 1, 'cantidad': 2}, ...]
       for (var item in cotizacion.productos) {
         int idProd = item['id'];
         int cantidadVendida = item['cantidad'];
 
-        // A. Obtener stock actual
         List<Map> resultado = await txn.query(
           'productos',
           columns: ['stock'],
@@ -236,7 +217,6 @@ class DatabaseHelper {
           int stockActual = resultado.first['stock'] as int;
           int nuevoStock = stockActual - cantidadVendida;
 
-          // B. Actualizar stock
           await txn.update(
             'productos',
             {'stock': nuevoStock},
@@ -246,29 +226,29 @@ class DatabaseHelper {
         }
       }
 
-      return idVenta; // Si todo salió bien, devolvemos el ID
+      return idVenta; 
     });
   }
 
-  // Leer historial de ventas
   Future<List<Cotizacion>> obtenerVentas() async {
     final db = await instance.database;
-    final maps = await db.query('cotizaciones', orderBy: 'fecha DESC'); // Las más recientes primero
+    final maps = await db.query('cotizaciones', orderBy: 'fecha DESC'); 
     return maps.map((json) => Cotizacion.fromMap(json)).toList();
   }
-  // --- MÉTODOS DE REPORTES ---
 
-  // Calcular el total de dinero de TODAS las ventas
   Future<double> obtenerTotalVentas() async {
     final db = await instance.database;
-    // La magia de SQL: "SUM(total)" suma toda la columna automáticamente
     final result = await db.rawQuery('SELECT SUM(total) as total FROM cotizaciones');
     
     if (result.isNotEmpty && result.first['total'] != null) {
       return result.first['total'] as double;
     } else {
-      return 0.0; // Si no hay ventas, devuelve 0
+      return 0.0;
     }
+  }
+  Future<void> eliminarTodasLasVentas() async {
+    final db = await instance.database;
+    await db.delete('cotizaciones'); 
   }
 }   
 

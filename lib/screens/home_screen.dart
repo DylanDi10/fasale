@@ -17,7 +17,7 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text('Menu FASALE'),
-        backgroundColor: Colors.indigo, // Un color más profesional
+        backgroundColor: Colors.indigo, 
         foregroundColor: Colors.white,
         actions: [
           IconButton(
@@ -60,7 +60,6 @@ class HomeScreen extends StatelessWidget {
         ),
       ),
 
-      // CUERPO: EL TABLERO DE MANDO
       body: Container(
         color: Colors.grey[100], 
         padding: EdgeInsets.all(20),

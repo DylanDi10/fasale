@@ -2,7 +2,7 @@ class Usuario {
   final int? id;
   final String username;
   final String password;
-  final String rol; // 'admin' o 'vendedor'
+  final String rol; 
 
   Usuario({
     this.id,

@@ -51,13 +51,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
               return Card(
                 margin: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 child: ListTile(
-                  leading: Icon(Icons.inventory, color: Colors.blue), // Icono o foto
+                  leading: Icon(Icons.inventory, color: Colors.blue), 
                   title: Text(producto.nombre, style: TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text("Stock: ${producto.stock}  |  Precio: S/ ${producto.precio}"),
                   trailing: IconButton(
                     icon: Icon(Icons.delete, color: Colors.red),
                     onPressed: () async {
-                      // Borrar producto y actualizar lista
                       await DatabaseHelper.instance.eliminarProducto(producto.id!);
                       _cargarProductos(); 
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -72,7 +71,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         builder: (context) => ProductFormScreen(producto: producto),
                       ),
                     );
-                    // Al volver, recargamos la lista por si cambió el precio o nombre
+ 
                     _cargarProductos();
                   },
                 ),
@@ -82,7 +81,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
         },
       ),
 
-      // Botón flotante para AGREGAR (+)
         floatingActionButton: FloatingActionButton(
           child: Icon(Icons.add),
           onPressed: () async {
@@ -90,7 +88,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
               context,
               MaterialPageRoute(builder: (context) => ProductFormScreen()),
             );
-            // Al volver, recargamos la lista
             _cargarProductos();
           },
         ),
