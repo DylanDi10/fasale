@@ -107,7 +107,7 @@ class HomeScreen extends StatelessWidget {
 
                   //  BOTÓN COTIZAR 
                   _DashboardCard(
-                    title: "Nueva Venta",
+                    title: "Nueva Cotización",
                     icon: Icons.shopping_cart,
                     color: Colors.green,
                     onTap: () {

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../db/database_helper.dart';
 import '../models/client_model.dart';
@@ -265,7 +267,26 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                   itemBuilder: (ctx, i) {
                     final prod = _listaProductos[i];
                     return ListTile(
-                      leading: Icon(Icons.inventory_2),
+                      leading: Container(
+                        width: 50,
+                        height: 50,
+                        child: (prod.urlImagen != null && prod.urlImagen != "")
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(5),
+                                child: prod.urlImagen!.startsWith('http')
+                                    ? Image.network(
+                                        prod.urlImagen!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (c, o, s) => Icon(Icons.broken_image),
+                                      )
+                                    : Image.file(
+                                        File(prod.urlImagen!),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (c, o, s) => Icon(Icons.image_not_supported),
+                                      ),
+                              )
+                            : Icon(Icons.inventory_2, color: Colors.grey), 
+                      ),
                       title: Text(prod.nombre),
                       subtitle: Text(
                         "Stock: ${prod.stock} | S/ ${prod.precio}",

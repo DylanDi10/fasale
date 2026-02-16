@@ -3,7 +3,7 @@ import '../db/database_helper.dart';
 import '../models/product_model.dart';
 
 class ProductFormScreen extends StatefulWidget {
-  final Producto? producto; // ¿Recibimos un producto? (Si es null, es NUEVO)
+  final Producto? producto; 
 
   const ProductFormScreen({Key? key, this.producto}) : super(key: key);
 
@@ -30,34 +30,30 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       _precioCtrl.text = widget.producto!.precio.toString();
       _stockCtrl.text = widget.producto!.stock.toString();
       _catCtrl.text = widget.producto!.categoria;
-      _imgCtrl.text = widget.producto!.rutaImagen ?? '';
+      _imgCtrl.text = widget.producto!.urlImagen ?? '';
     }
   }
 
   void _guardar() async {
     if (_formKey.currentState!.validate()) {
       
-      // 1. Armamos el objeto con los datos del formulario
-      // OJO: Convertimos precio y stock de Texto a Número
       Producto modelo = Producto(
-        id: widget.producto?.id, // Si editamos, mantenemos el ID. Si es nuevo, es null.
+        id: widget.producto?.id, 
         nombre: _nombreCtrl.text,
         descripcion: _descCtrl.text,
         precio: double.parse(_precioCtrl.text), 
         stock: int.parse(_stockCtrl.text),
         categoria: _catCtrl.text,
-        rutaImagen: _imgCtrl.text,
+        urlImagen: _imgCtrl.text,
       );
 
-      // 2. Decidimos: ¿Insertar o Actualizar?
       if (widget.producto == null) {
         await DatabaseHelper.instance.insertarProducto(modelo);
       } else {
         await DatabaseHelper.instance.actualizarProducto(modelo);
       }
 
-      // 3. Cerramos la pantalla y volvemos a la lista
-      Navigator.pop(context, true); // El "true" es para indicar que hubo cambios y la lista debe refrescarse
+      Navigator.pop(context, true); 
     }
   }
 

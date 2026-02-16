@@ -14,7 +14,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('sewing_sales.db');
+    _database = await _initDB('sewing_sales_v2.db');
     return _database!;
   }
 
@@ -50,7 +50,7 @@ class DatabaseHelper {
         precio $realType,
         stock $intType,
         categoria $textType,
-        ruta_imagen TEXT 
+        url_imagen TEXT 
       )
     ''');
 

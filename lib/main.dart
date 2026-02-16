@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'dart:io';
 import 'screens/login_screen.dart'; 
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (Platform.isWindows || Platform.isLinux) {
+    sqfliteFfiInit(); 
+    databaseFactory = databaseFactoryFfi;
+  }
+
   runApp(MyApp());
 }
 
@@ -10,7 +19,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false, 
-      title: 'Ventas Sewing',
+      title: 'Fasale',
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),

@@ -5,7 +5,7 @@ class Producto {
   final double precio;
   final int stock;
   final String categoria;
-  final String? rutaImagen;
+  final String? urlImagen;
 
   Producto({
     this.id,
@@ -14,7 +14,7 @@ class Producto {
     required this.precio,
     required this.stock,
     required this.categoria,
-    this.rutaImagen,
+    this.urlImagen,
   });
 
 
@@ -26,7 +26,7 @@ class Producto {
       'precio': precio,
       'stock': stock,
       'categoria': categoria,
-      'ruta_imagen': rutaImagen, 
+      'url_imagen': urlImagen, 
     };
   }
 
@@ -39,7 +39,7 @@ class Producto {
       precio: map['precio'],
       stock: map['stock'],
       categoria: map['categoria'],
-      rutaImagen: map['ruta_imagen'],
+      urlImagen: map['url_imagen'],
     );
   }
 }

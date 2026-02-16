@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../db/database_helper.dart';
 import '../models/product_model.dart';
-import 'product_form_screen.dart'; 
+import 'product_form_screen.dart';
+import 'dart:io';
 
 class ProductsScreen extends StatefulWidget {
   @override
@@ -27,14 +28,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Inventario de Productos')),
-      
+
       body: FutureBuilder<List<Producto>>(
-        future: _listaProductos, 
+        future: _listaProductos,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());
           }
-          
+
           if (snapshot.hasError) {
             return Center(child: Text("Error: ${snapshot.error}"));
           }
@@ -47,20 +48,51 @@ class _ProductsScreenState extends State<ProductsScreen> {
             itemCount: snapshot.data!.length,
             itemBuilder: (context, index) {
               final producto = snapshot.data![index];
-              
+
               return Card(
                 margin: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 child: ListTile(
-                  leading: Icon(Icons.inventory, color: Colors.blue), 
-                  title: Text(producto.nombre, style: TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text("Stock: ${producto.stock}  |  Precio: S/ ${producto.precio}"),
+                  leading: Container(
+                    width: 50,
+                    height: 50,
+                    child:
+                        (producto.urlImagen != null &&
+                            producto.urlImagen != "") 
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(5),
+                            child:
+                                producto.urlImagen!.startsWith('http')
+                                ? Image.network(
+                                    producto.urlImagen!, 
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, o, s) =>
+                                        Icon(Icons.broken_image),
+                                  )
+                                : Image.file(
+                                    File(producto.urlImagen!), 
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, o, s) =>
+                                        Icon(Icons.image_not_supported),
+                                  ),
+                          )
+                        : Icon(Icons.inventory, color: Colors.blue),
+                  ),
+                  title: Text(
+                    producto.nombre,
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    "Stock: ${producto.stock}  |  Precio: S/ ${producto.precio}",
+                  ),
                   trailing: IconButton(
                     icon: Icon(Icons.delete, color: Colors.red),
                     onPressed: () async {
-                      await DatabaseHelper.instance.eliminarProducto(producto.id!);
-                      _cargarProductos(); 
+                      await DatabaseHelper.instance.eliminarProducto(
+                        producto.id!,
+                      );
+                      _cargarProductos();
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Producto eliminado"))
+                        SnackBar(content: Text("Producto eliminado")),
                       );
                     },
                   ),
@@ -68,10 +100,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => ProductFormScreen(producto: producto),
+                        builder: (context) =>
+                            ProductFormScreen(producto: producto),
                       ),
                     );
- 
+
                     _cargarProductos();
                   },
                 ),
@@ -81,16 +114,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
         },
       ),
 
-        floatingActionButton: FloatingActionButton(
-          child: Icon(Icons.add),
-          onPressed: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => ProductFormScreen()),
-            );
-            _cargarProductos();
-          },
-        ),
+      floatingActionButton: FloatingActionButton(
+        child: Icon(Icons.add),
+        onPressed: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ProductFormScreen()),
+          );
+          _cargarProductos();
+        },
+      ),
     );
   }
 }
