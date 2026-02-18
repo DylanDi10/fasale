@@ -1,22 +1,23 @@
 class Producto {
-  final int? id; 
+  final int? id;
   final String nombre;
-  final String? descripcion;
+  final String descripcion;
   final double precio;
   final int stock;
-  final String categoria;
   final String? urlImagen;
+  final int categoriaId; 
+  final String? nombreCategoria; 
 
   Producto({
     this.id,
     required this.nombre,
-    this.descripcion,
+    required this.descripcion,
     required this.precio,
     required this.stock,
-    required this.categoria,
     this.urlImagen,
+    required this.categoriaId, 
+    this.nombreCategoria, 
   });
-
 
   Map<String, dynamic> toMap() {
     return {
@@ -25,11 +26,10 @@ class Producto {
       'descripcion': descripcion,
       'precio': precio,
       'stock': stock,
-      'categoria': categoria,
-      'url_imagen': urlImagen, 
+      'url_imagen': urlImagen,
+      'categoria_id': categoriaId, 
     };
   }
-
 
   factory Producto.fromMap(Map<String, dynamic> map) {
     return Producto(
@@ -38,8 +38,9 @@ class Producto {
       descripcion: map['descripcion'],
       precio: map['precio'],
       stock: map['stock'],
-      categoria: map['categoria'],
       urlImagen: map['url_imagen'],
+      categoriaId: map['categoria_id'], 
+      nombreCategoria: map['nombre_categoria'],
     );
   }
 }

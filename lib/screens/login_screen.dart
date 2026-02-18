@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart'; 
 import '../models/user_model.dart';
 import 'home_screen.dart'; 
@@ -9,6 +10,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  bool _passwordVisible = false; 
   final _userController = TextEditingController();
   final _passController = TextEditingController();
   
@@ -35,6 +37,9 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     if (usuarioEncontrado != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('usuario_id', usuarioEncontrado.id!);
+      await prefs.setString('nombre_vendedor', usuarioEncontrado.username);
 
       Navigator.pushReplacement(
         context,
@@ -69,7 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   controller: _userController,
                   decoration: InputDecoration(
                     labelText: 'Usuario',
-                    border: OutlineInputBorder(),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
                     prefixIcon: Icon(Icons.person),
                   ),
                   validator: (value) => value!.isEmpty ? 'Ingresa el usuario' : null,
@@ -77,14 +82,26 @@ class _LoginScreenState extends State<LoginScreen> {
                 SizedBox(height: 16),
 
                 TextFormField(
-                  controller: _passController,
-                  obscureText: true,
+                  controller: _passController, // <--- ¡REVISA QUE ESTA LÍNEA SIGA AQUÍ!
+                  obscureText: !_passwordVisible, 
                   decoration: InputDecoration(
                     labelText: 'Contraseña',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.lock),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                    prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _passwordVisible ? Icons.visibility : Icons.visibility_off,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white70 
+                            : Theme.of(context).primaryColor, 
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _passwordVisible = !_passwordVisible;
+                        });
+                      },
+                    ),
                   ),
-                  validator: (value) => value!.isEmpty ? 'Ingresa la contraseña' : null,
                 ),
                 SizedBox(height: 24),
 

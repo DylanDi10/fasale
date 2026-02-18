@@ -36,15 +36,25 @@ dependencies:
   printing: ^5.14.2
   intl: ^0.20.2
   sqflite_common_ffi: ^2.4.0+2
+  url_launcher: ^6.3.2
+  shared_preferences: ^2.5.4
+
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
+  flutter_launcher_icons: "^0.13.1"
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/logo.png" # La ruta de tu logo
+  adaptive_icon_background: "#ffffff" # Color de fondo (opcional para Android)
+  adaptive_icon_foreground: "assets/images/logo.png" # Para iconos modernos
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
@@ -64,8 +74,8 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
+  assets:
+    - assets/images/logo.png
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see

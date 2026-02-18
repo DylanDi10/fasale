@@ -1,11 +1,14 @@
-import 'package:cotizaciones_app/screens/about_screen.dart';
+import 'package:cotizaciones_app/main.dart';
+import 'package:cotizaciones_app/screens/admins_users_screen.dart';
 import 'package:cotizaciones_app/screens/report_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
 import 'login_screen.dart';
 import 'products_screen.dart';
 import 'clientes_screen.dart';
 import 'nueva_venta_screen.dart';
+import 'about_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final Usuario usuario;
@@ -15,22 +18,22 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Menu FASALE'),
-        backgroundColor: Colors.indigo, 
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.exit_to_app),
-            onPressed: () {
-              Navigator.pushReplacement(
-                context, 
-                MaterialPageRoute(builder: (_) => LoginScreen())
-              );
-            },
-          )
-        ],
-      ),
+    appBar: AppBar(
+      title: const Text("Cotizador Textil"),
+      actions: [
+        IconButton(
+          icon: Icon(
+            temaGlobal.value == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode
+          ),
+          onPressed: () {
+            // Al cambiar el valor, el ValueListenableBuilder del main reconstruye la app
+            temaGlobal.value = temaGlobal.value == ThemeMode.light 
+                ? ThemeMode.dark 
+                : ThemeMode.light;
+          },
+        ),
+      ],
+    ),
       
       drawer: Drawer(
         child: ListView(
@@ -41,27 +44,47 @@ class HomeScreen extends StatelessWidget {
               accountEmail: Text("Rol: ${usuario.rol}"),
               currentAccountPicture: CircleAvatar(
                 backgroundColor: Colors.white,
-                child: Text(usuario.username[0].toUpperCase(), style: TextStyle(fontSize: 40)),
+                child: Text(
+                  usuario.username[0].toUpperCase(),
+                  style: TextStyle(fontSize: 40, color: Colors.indigo),
+                ),
               ),
               decoration: BoxDecoration(color: Colors.indigo),
             ),
+            
             ListTile(
-              leading: Icon(Icons.info_rounded),
-              title: Text('Información'),
+              leading: Icon(Icons.info_outline, color: Colors.grey[700]),
+              title: Text('Acerca de la App'),
               onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => AboutScreen(),
-                        ),
-                      );},
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => AboutScreen()),
+                );
+              },
+            ),
+
+            Divider(),
+
+            ListTile(
+              leading: Icon(Icons.logout, color: Colors.red),
+              title: Text('Cerrar Sesión', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.clear();
+
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => LoginScreen()),
+                  (Route<dynamic> route) => false,
+                );
+              },
             ),
           ],
         ),
       ),
 
       body: Container(
-        color: Colors.grey[100], 
         padding: EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -75,11 +98,12 @@ class HomeScreen extends StatelessWidget {
 
             Expanded(
               child: GridView.count(
-                crossAxisCount: 2, 
+                crossAxisCount: 2,
                 crossAxisSpacing: 15,
                 mainAxisSpacing: 15,
                 children: [
-                  //  BOTÓN INVENTARIO 
+                  
+                  // 1. BOTÓN INVENTARIO
                   _DashboardCard(
                     title: "Inventario",
                     icon: Icons.inventory_2,
@@ -92,7 +116,7 @@ class HomeScreen extends StatelessWidget {
                     },
                   ),
 
-                  //  BOTÓN CLIENTES 
+                  // 2. BOTÓN CLIENTES
                   _DashboardCard(
                     title: "Clientes",
                     icon: Icons.people,
@@ -105,7 +129,7 @@ class HomeScreen extends StatelessWidget {
                     },
                   ),
 
-                  //  BOTÓN COTIZAR 
+                  // 3. BOTÓN COTIZAR
                   _DashboardCard(
                     title: "Nueva Cotización",
                     icon: Icons.shopping_cart,
@@ -120,19 +144,25 @@ class HomeScreen extends StatelessWidget {
                     },
                   ),
 
-                  //  BOTÓN REPORTES 
-                  if (usuario.rol == 'admin') 
-                    _DashboardCard(
-                      title: "Reportes",
-                      icon: Icons.bar_chart,
-                      color: Colors.purple,
-                      onTap: () {
+                  // 4. BOTÓN REPORTES (INTELIGENTE) 
+                  _DashboardCard(
+                    title: usuario.rol == 'admin' ? "Supervisar Ventas" : "Mis Reportes",
+                    icon: Icons.bar_chart,
+                    color: usuario.rol == 'admin' ? Colors.orange : Colors.purple,
+                    onTap: () {
+                      if (usuario.rol == 'admin') {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (context) => ReportsScreen()),
+                          MaterialPageRoute(builder: (context) => AdminUsersScreen(usuarioLogueado: usuario)),
                         );
-                      },
-                    ),
+                      } else {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => ReportsScreen(usuarioLogueado: usuario)),
+                        );
+                      }
+                    },
+                  ),
                 ],
               ),
             ),
@@ -161,7 +191,7 @@ class _DashboardCard extends StatelessWidget {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: InkWell( 
+      child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(15),
         child: Column(
@@ -169,7 +199,7 @@ class _DashboardCard extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 30,
-              backgroundColor: color.withOpacity(0.2), // Color suave de fondo
+              backgroundColor: color.withOpacity(0.2),
               child: Icon(icon, size: 30, color: color),
             ),
             SizedBox(height: 10),

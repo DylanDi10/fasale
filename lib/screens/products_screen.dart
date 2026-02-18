@@ -27,10 +27,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Inventario de Productos')),
+      appBar: AppBar(
+      backgroundColor: Colors.indigo[900],
+        title: Text('Inventario de Productos')),
 
-      body: FutureBuilder<List<Producto>>(
-        future: _listaProductos,
+      body: 
+      FutureBuilder<List<Producto>>(
+        future:
+         _listaProductos,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());
@@ -44,7 +48,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
             return Center(child: Text("No tienes productos registrados."));
           }
 
-          return ListView.builder(
+          return 
+          
+          ListView.builder(
             itemCount: snapshot.data!.length,
             itemBuilder: (context, index) {
               final producto = snapshot.data![index];
@@ -56,20 +62,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     width: 50,
                     height: 50,
                     child:
-                        (producto.urlImagen != null &&
-                            producto.urlImagen != "") 
+                        (producto.urlImagen != null && producto.urlImagen != "")
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(5),
-                            child:
-                                producto.urlImagen!.startsWith('http')
+                            child: producto.urlImagen!.startsWith('http')
                                 ? Image.network(
-                                    producto.urlImagen!, 
+                                    producto.urlImagen!,
                                     fit: BoxFit.cover,
                                     errorBuilder: (c, o, s) =>
                                         Icon(Icons.broken_image),
                                   )
                                 : Image.file(
-                                    File(producto.urlImagen!), 
+                                    File(producto.urlImagen!),
                                     fit: BoxFit.cover,
                                     errorBuilder: (c, o, s) =>
                                         Icon(Icons.image_not_supported),
@@ -81,8 +85,42 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     producto.nombre,
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  subtitle: Text(
-                    "Stock: ${producto.stock}  |  Precio: S/ ${producto.precio}",
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Precio: S/ ${producto.precio}",
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      SizedBox(height: 4),
+                      producto.stock <= 5
+                          ? Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: producto.stock == 0
+                                    ? Colors.red
+                                    : Colors.orange,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                producto.stock == 0
+                                    ? "¡AGOTADO!"
+                                    : "¡Quedan solo ${producto.stock}!",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            )
+                          : Text(
+                              "Stock: ${producto.stock}",
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                    ],
                   ),
                   trailing: IconButton(
                     icon: Icon(Icons.delete, color: Colors.red),

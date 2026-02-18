@@ -1,19 +1,21 @@
-import 'dart:convert'; 
+import 'dart:convert';
 
 class Cotizacion {
   final int? id;
   final int clienteId;
-  final int vendedorId;
-  final DateTime fecha;
+  final int? usuarioId;
+  final String fecha;
   final double total;
-  final List<dynamic> productos; 
+  final String estado; 
+  final List<Map<String, dynamic>> productos;
 
   Cotizacion({
     this.id,
     required this.clienteId,
-    required this.vendedorId,
+    this.usuarioId,
     required this.fecha,
     required this.total,
+    this.estado = 'Pendiente', 
     required this.productos,
   });
 
@@ -21,10 +23,11 @@ class Cotizacion {
     return {
       'id': id,
       'cliente_id': clienteId,
-      'vendedor_id': vendedorId,
-      'fecha': fecha.toIso8601String(),
+      'usuario_id': usuarioId,
+      'fecha': fecha,
       'total': total,
-      'productos_json': jsonEncode(productos), 
+      'estado': estado, 
+      'productos_json': jsonEncode(productos),
     };
   }
 
@@ -32,10 +35,13 @@ class Cotizacion {
     return Cotizacion(
       id: map['id'],
       clienteId: map['cliente_id'],
-      vendedorId: map['vendedor_id'],
-      fecha: DateTime.parse(map['fecha']),
-      total: map['total'],
-      productos: jsonDecode(map['productos_json']),
+      usuarioId: map['usuario_id'],
+      fecha: map['fecha'],
+      total: (map['total'] as num).toDouble(),
+      estado: map['estado'] ?? 'Pendiente', 
+      productos: List<Map<String, dynamic>>.from(
+        jsonDecode(map['productos_json']),
+      ),
     );
   }
 }

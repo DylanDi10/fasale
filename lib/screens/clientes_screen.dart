@@ -26,7 +26,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Cartera de Clientes')),
+      appBar: AppBar(
+        backgroundColor: Color(Colors.orange[700]!.value),
+        title: Text('Cartera de Clientes')),
       
       body: FutureBuilder<List<Cliente>>(
         future: _listaClientes,

@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../db/database_helper.dart';
 import '../models/product_model.dart';
+import '../models/category_model.dart';
 
 class ProductFormScreen extends StatefulWidget {
-  final Producto? producto; 
+  final Producto? producto;
 
   const ProductFormScreen({Key? key, this.producto}) : super(key: key);
 
@@ -14,103 +16,222 @@ class ProductFormScreen extends StatefulWidget {
 class _ProductFormScreenState extends State<ProductFormScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _nombreCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
-  final _precioCtrl = TextEditingController();
-  final _stockCtrl = TextEditingController();
-  final _catCtrl = TextEditingController();
-  final _imgCtrl = TextEditingController();
+  late TextEditingController _nombreController;
+  late TextEditingController _precioController;
+  late TextEditingController _stockController;
+  late TextEditingController _urlImagenController;
+  late TextEditingController _descripcionController;
+
+  int? _categoriaIdSeleccionada; 
+  List<Categoria> _listaCategorias = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
+    _nombreController = TextEditingController(text: widget.producto?.nombre ?? '');
+    _precioController = TextEditingController(text: widget.producto?.precio.toString() ?? '');
+    _stockController = TextEditingController(text: widget.producto?.stock.toString() ?? '');
+    _urlImagenController = TextEditingController(text: widget.producto?.urlImagen ?? '');
+    _descripcionController = TextEditingController(text: widget.producto?.descripcion ?? '');
+    
     if (widget.producto != null) {
-      _nombreCtrl.text = widget.producto!.nombre;
-      _descCtrl.text = widget.producto!.descripcion ?? ''; 
-      _precioCtrl.text = widget.producto!.precio.toString();
-      _stockCtrl.text = widget.producto!.stock.toString();
-      _catCtrl.text = widget.producto!.categoria;
-      _imgCtrl.text = widget.producto!.urlImagen ?? '';
+      _categoriaIdSeleccionada = widget.producto!.categoriaId;
     }
+
+    _cargarCategorias();
   }
 
-  void _guardar() async {
+  void _cargarCategorias() async {
+    final categorias = await DatabaseHelper.instance.obtenerCategorias();
+    setState(() {
+      _listaCategorias = categorias;
+      _isLoading = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _precioController.dispose();
+    _stockController.dispose();
+    _urlImagenController.dispose();
+    _descripcionController.dispose();
+    super.dispose();
+  }
+
+  void _guardarProducto() async {
     if (_formKey.currentState!.validate()) {
       
-      Producto modelo = Producto(
-        id: widget.producto?.id, 
-        nombre: _nombreCtrl.text,
-        descripcion: _descCtrl.text,
-        precio: double.parse(_precioCtrl.text), 
-        stock: int.parse(_stockCtrl.text),
-        categoria: _catCtrl.text,
-        urlImagen: _imgCtrl.text,
+      if (_categoriaIdSeleccionada == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Por favor selecciona una categoría'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+
+      final producto = Producto(
+        id: widget.producto?.id,
+        nombre: _nombreController.text,
+        precio: double.parse(_precioController.text),
+        stock: int.parse(_stockController.text),
+        urlImagen: _urlImagenController.text,
+        descripcion: _descripcionController.text,
+        
+        categoriaId: _categoriaIdSeleccionada!, 
       );
 
       if (widget.producto == null) {
-        await DatabaseHelper.instance.insertarProducto(modelo);
+        await DatabaseHelper.instance.insertarProducto(producto);
       } else {
-        await DatabaseHelper.instance.actualizarProducto(modelo);
+        await DatabaseHelper.instance.actualizarProducto(producto);
       }
 
-      Navigator.pop(context, true); 
+      Navigator.pop(context, true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.producto == null ? 'Nuevo Producto' : 'Editar Producto'),
+        backgroundColor: Colors.indigo,
+        foregroundColor: Colors.white,
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
-          child: Column(
+          child: ListView(
             children: [
               TextFormField(
-                controller: _nombreCtrl,
-                decoration: InputDecoration(labelText: 'Nombre del Producto'),
-                validator: (val) => val!.isEmpty ? 'Campo obligatorio' : null,
+                controller: _nombreController,
+                decoration: InputDecoration(
+                  labelText: 'Nombre del Producto', 
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.shopping_bag_outlined)
+                ),
+                validator: (value) => value!.isEmpty ? 'Ingresa un nombre' : null,
               ),
-              TextFormField(
-                controller: _precioCtrl,
-                keyboardType: TextInputType.number, 
-                decoration: InputDecoration(labelText: 'Precio (S/.)', prefixText: 'S/ '),
-                validator: (val) => val!.isEmpty ? 'Campo obligatorio' : null,
+              SizedBox(height: 15),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _precioController,
+                      decoration: InputDecoration(
+                        labelText: 'Precio (S/)', 
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.attach_money)
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) => value!.isEmpty ? 'Requerido' : null,
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _stockController,
+                      decoration: InputDecoration(
+                        labelText: 'Stock', 
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.inventory_2_outlined)
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) => value!.isEmpty ? 'Requerido' : null,
+                    ),
+                  ),
+                ],
               ),
-              TextFormField(
-                controller: _stockCtrl,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(labelText: 'Stock (Cantidad)'),
-                validator: (val) => val!.isEmpty ? 'Campo obligatorio' : null,
+              SizedBox(height: 15),
+
+
+              DropdownButtonFormField<int>(
+                decoration: InputDecoration(
+                  labelText: 'Categoría',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.category),
+                ),
+                value: _categoriaIdSeleccionada,
+                items: _listaCategorias.map((categoria) {
+                  return DropdownMenuItem<int>(
+                    value: categoria.id, 
+                    child: Text(categoria.nombre),
+                  );
+                }).toList(),
+                onChanged: (valor) {
+                  setState(() {
+                    _categoriaIdSeleccionada = valor;
+                  });
+                },
+                validator: (value) => value == null ? 'Selecciona una categoría' : null,
               ),
+              
+              SizedBox(height: 15),
+
               TextFormField(
-                controller: _catCtrl,
-                decoration: InputDecoration(labelText: 'Categoría (Ej: Industrial, Doméstica)'),
-                validator: (val) => val!.isEmpty ? 'Campo obligatorio' : null,
+                controller: _urlImagenController,
+                decoration: InputDecoration(
+                  labelText: 'URL de Imagen (Opcional)',
+                  prefixIcon: Icon(Icons.link),
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
               ),
-              TextFormField(
-                controller: _descCtrl,
-                decoration: InputDecoration(labelText: 'Descripción (Opcional)'),
-                maxLines: 2,
-              ),
-              TextFormField(
-                controller: _imgCtrl,
-                decoration: InputDecoration(labelText: 'URL de Imagen (Opcional)', prefixIcon: Icon(Icons.image)),
+              SizedBox(height: 10),
+
+              Container(
+                height: 150,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(10),
+                  color: Colors.grey[200],
+                ),
+                child: _urlImagenController.text.isEmpty
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.image, size: 50, color: Colors.grey),
+                          Text("Sin imagen"),
+                        ],
+                      )
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.network(
+                          _urlImagenController.text,
+                          fit: BoxFit.cover,
+                          errorBuilder: (c, o, s) => Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.broken_image, size: 50, color: Colors.red),
+                              Text("Error al cargar imagen"),
+                            ],
+                          ),
+                        ),
+                      ),
               ),
               SizedBox(height: 20),
-              
+
               SizedBox(
-                width: double.infinity,
                 height: 50,
                 child: ElevatedButton.icon(
-                  onPressed: _guardar,
+                  onPressed: _guardarProducto,
                   icon: Icon(Icons.save),
-                  label: Text('GUARDAR PRODUCTO'),
+                  label: Text("GUARDAR"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo,
+                    foregroundColor: Colors.white,
+                    textStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                 ),
-              )
+              ),
             ],
           ),
         ),
