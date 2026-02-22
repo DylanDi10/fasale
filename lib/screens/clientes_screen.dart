@@ -1,3 +1,4 @@
+import 'package:cotizaciones_app/db/supabase_service.dart';
 import 'package:flutter/material.dart';
 import '../db/database_helper.dart';
 import '../models/client_model.dart';
@@ -19,7 +20,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
   void _cargarClientes() {
     setState(() {
-      _listaClientes = DatabaseHelper.instance.obtenerClientes();
+      _listaClientes = SupabaseService.instance.obtenerClientes();
     });
   }
 
@@ -27,8 +28,29 @@ class _ClientesScreenState extends State<ClientesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Color(Colors.orange[700]!.value),
-        title: Text('Cartera de Clientes')),
+        title: TextField(
+          style: TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: "Buscar DNI/RUC...",
+            hintStyle: TextStyle(color: Colors.white70),
+            prefixIcon: Icon(Icons.search, color: Colors.white),
+            border: InputBorder.none,
+          ),
+          // DENTRO DEL AppBar -> title: TextField
+          onChanged: (value) {
+            if (value.isEmpty) {
+              _cargarClientes(); // Tu función que trae todos de la nube
+            } else {
+              // QUITAMOS EL 'await' PARA QUE SIGA SIENDO UN FUTURE
+              final resultadosBusqueda = SupabaseService.instance.buscarClientesPorDocumento(value);
+              
+              setState(() {
+                _listaClientes = resultadosBusqueda;
+              });
+            }
+          },
+        ),
+      ),
       
       body: FutureBuilder<List<Cliente>>(
         future: _listaClientes,
@@ -58,7 +80,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   trailing: IconButton(
                     icon: Icon(Icons.delete, color: Colors.red),
                     onPressed: () async {
-                      await DatabaseHelper.instance.eliminarCliente(cliente.id!);
+                      await SupabaseService.instance.eliminarCliente(cliente.id!);
                       _cargarClientes();
                     },
                   ),

@@ -1,3 +1,4 @@
+import 'package:cotizaciones_app/db/supabase_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../db/database_helper.dart'; 
@@ -27,7 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = '';
     });
 
-    Usuario? usuarioEncontrado = await DatabaseHelper.instance.login(
+    Usuario? usuarioEncontrado = await SupabaseService.instance.login(
       _userController.text.trim(), 
       _passController.text.trim()
     );
@@ -82,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 SizedBox(height: 16),
 
                 TextFormField(
-                  controller: _passController, // <--- ¡REVISA QUE ESTA LÍNEA SIGA AQUÍ!
+                  controller: _passController,
                   obscureText: !_passwordVisible, 
                   decoration: InputDecoration(
                     labelText: 'Contraseña',

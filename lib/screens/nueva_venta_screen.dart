@@ -1,5 +1,8 @@
 import 'dart:io';
+import 'package:cotizaciones_app/db/supabase_service.dart';
+import 'package:cotizaciones_app/screens/products_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../db/database_helper.dart';
 import '../models/client_model.dart';
 import '../models/product_model.dart';
@@ -9,6 +12,7 @@ import '../models/user_model.dart';
 class NuevaVentaScreen extends StatefulWidget {
   final Usuario usuarioActual;
   final Cotizacion? cotizacionAEditar;
+  
 
   const NuevaVentaScreen({
     Key? key,
@@ -21,6 +25,7 @@ class NuevaVentaScreen extends StatefulWidget {
 }
 
 class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
+  
   Cliente? _clienteSeleccionado;
   List<Map<String, dynamic>> _carrito = [];
   double _total = 0.0;
@@ -36,11 +41,11 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
 
   void _cargarDatos() async {
     bool esAdmin = widget.usuarioActual.rol == 'admin';
-    final clientes = await DatabaseHelper.instance.obtenerClientes(
+    final clientes = await SupabaseService.instance.obtenerClientes(
       verTodo: esAdmin,
       usuarioIdEspecifico: esAdmin ? null : widget.cotizacionAEditar?.usuarioId,
     );
-    final productos = await DatabaseHelper.instance.obtenerProductos();
+    final productos = await SupabaseService.instance.obtenerProductos();
 
     setState(() {
       _listaClientes = clientes;
@@ -114,14 +119,101 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     }
     setState(() => _total = tempTotal);
   }
+  // --- NUEVA FUNCIÓN: DIÁLOGO PARA PEDIR CANTIDAD ---
+  void _pedirCantidadYAgregarAlCarrito(Producto producto) {
+    int cantidadElegida = 1;
 
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        // StatefulBuilder nos permite actualizar el número dentro del diálogo en tiempo real
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text("Agregar al carrito", textAlign: TextAlign.center),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(producto.nombre, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text("Stock disponible: ${producto.stock}", style: TextStyle(color: Colors.grey)),
+                  SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.remove_circle_outline, color: Colors.red, size: 35),
+                        onPressed: () {
+                          if (cantidadElegida > 1) {
+                            setStateDialog(() => cantidadElegida--);
+                          }
+                        },
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Text(
+                          "$cantidadElegida", 
+                          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.add_circle_outline, color: Colors.green, size: 35),
+                        onPressed: () {
+                          // Bloqueamos para que no pueda pedir más del stock que existe
+                          if (cantidadElegida < producto.stock) {
+                            setStateDialog(() => cantidadElegida++);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("Stock máximo alcanzado"), duration: Duration(seconds: 1)),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx), 
+                  child: Text("CANCELAR", style: TextStyle(color: Colors.grey))
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    // Reutilizamos tu lógica, pero metiendo la cantidad exacta
+                    _agregarVariasUnidadesAlCarrito(producto, cantidadElegida);
+                  },
+                  child: Text("AGREGAR S/ ${(producto.precio * cantidadElegida).toStringAsFixed(2)}"),
+                )
+              ],
+            );
+          }
+        );
+      }
+    );
+  }
+
+  // --- FUNCIÓN AUXILIAR PARA EL DIÁLOGO ---
+  void _agregarVariasUnidadesAlCarrito(Producto producto, int cantidad) {
+    int index = _carrito.indexWhere((item) => item['producto'].id == producto.id);
+    setState(() {
+      if (index != -1) {
+        _carrito[index]['cantidad'] += cantidad;
+      } else {
+        _carrito.add({'producto': producto, 'cantidad': cantidad});
+      }
+    });
+    _calcularTotal();
+  }
   // --- IDEA #6: DIÁLOGO DE ÉXITO ANIMADO ---
   void _mostrarExito() {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
-        Future.delayed(const Duration(milliseconds: 1600), () {
+        Future.delayed(const Duration(milliseconds: 1400), () {
           Navigator.pop(ctx);
           Navigator.pop(context, true);
         });
@@ -160,11 +252,13 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     }
 
     List<Map<String, dynamic>> productosParaGuardar = _carrito.map((item) {
+      Producto p = item['producto']; 
       return {
-        'id': item['producto'].id,
-        'nombre': item['producto'].nombre,
+        'id': p.id,
+        'nombre': p.nombre,
         'cantidad': item['cantidad'],
-        'precio_unitario': item['producto'].precio,
+        'precio_unitario': p.precio,
+        'imagen': p.urlImagen, 
       };
     }).toList();
 
@@ -180,9 +274,9 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     );
 
     if (widget.cotizacionAEditar == null) {
-      await DatabaseHelper.instance.crearVenta(cotiFinal);
+      await SupabaseService.instance.crearVenta(cotiFinal);
     } else {
-      await DatabaseHelper.instance.actualizarCotizacion(cotiFinal);
+      await SupabaseService.instance.actualizarCotizacion(cotiFinal);
     }
 
     _mostrarExito(); // Llamamos al diálogo animado
@@ -214,46 +308,94 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                       bottomRight: Radius.circular(30),
                     ),
                   ),
-                  child: DropdownButtonFormField<Cliente>(
-                    decoration: InputDecoration(
-                      labelText: "Cliente",
-                      filled: true,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(15),
-                        borderSide: BorderSide.none,
-                      ),
-                      prefixIcon: const Icon(Icons.person),
-                    ),
-                    value: _clienteSeleccionado,
-                    items: _listaClientes.map((cliente) {
-                      return DropdownMenuItem(
-                        value: cliente,
-                        child: Text(cliente.nombre),
+                  child: Autocomplete<Cliente>(
+                    optionsBuilder: (TextEditingValue textEditingValue) async {
+                      if (textEditingValue.text.length < 2) {
+                        return const Iterable<Cliente>.empty();
+                      }
+                      // Llama a Supabase mientras el vendedor escribe
+                      return await SupabaseService.instance.buscarClientesGeneral(textEditingValue.text);
+                    },
+                    displayStringForOption: (Cliente option) => option.nombre,
+                    optionsViewBuilder: (context, onSelected, options) {
+                      return Align(
+                        alignment: Alignment.topLeft,
+                        child: Material(
+                          elevation: 4.0,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxHeight: 200, maxWidth: MediaQuery.of(context).size.width - 32),
+                            child: ListView.builder(
+                              padding: EdgeInsets.zero,
+                              itemCount: options.length,
+                              itemBuilder: (BuildContext context, int index) {
+                                final Cliente cliente = options.elementAt(index);
+                                return ListTile(
+                                  leading: Icon(Icons.person, color: Colors.indigo),
+                                  title: Text(cliente.nombre),
+                                  subtitle: Text("DNI/RUC: ${cliente.dniRuc}"), // ¡Aquí resolvemos el problema de los homónimos!
+                                  onTap: () {
+                                    onSelected(cliente);
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ),
                       );
-                    }).toList(),
-                    onChanged: (val) =>
-                        setState(() => _clienteSeleccionado = val),
-                  ),
+                    },
+                    onSelected: (Cliente seleccion) {
+                      setState(() {
+                        _clienteSeleccionado = seleccion; // Guardas el cliente elegido para la cotización
+                      });
+                    },
+                    fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                      return TextFormField(
+                        controller: textEditingController,
+                        focusNode: focusNode,
+                        decoration: InputDecoration(
+                          labelText: 'Buscar Cliente (Nombre o DNI/RUC)',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                        ),
+                      );
+                    },
+                  )
                 ),
 
                 const SizedBox(height: 10),
 
-                // BOTÓN AGREGAR PRODUCTOS
+                // BOTÓN AGREGAR PRODUCTOS (Actualizado al Nuevo Catálogo)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange, // Le damos un color llamativo
+                      foregroundColor: Colors.white,
                       minimumSize: const Size(double.infinity, 55),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(15),
                       ),
                     ),
-                    icon: const Icon(Icons.add_shopping_cart),
+                    icon: const Icon(Icons.search),
                     label: const Text(
-                      "AGREGAR PRODUCTOS",
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      "BUSCAR Y AGREGAR PRODUCTO",
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
-                    onPressed: () => _mostrarSelectorProductos(context),
+                    onPressed: () async {
+                      // 1. Navegamos al catálogo en modo selección
+                      final Producto? productoElegido = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          // IMPORTANTE: Asegúrate de haber importado tu products_screen.dart arriba
+                          builder: (context) => ProductsScreen(modoSeleccion: true), 
+                        ),
+                      );
+
+                      // 2. Si el vendedor seleccionó una máquina...
+                      if (productoElegido != null) {
+                        _pedirCantidadYAgregarAlCarrito(productoElegido);
+                      }
+                    },
                   ),
                 ),
 
@@ -264,7 +406,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                   endIndent: 20,
                 ),
 
-                // LISTADO DEL CARRITO (IDEA #5: TARJETAS)
+                // LISTADO DEL CARRITO (CORREGIDO PARA NO COLGARSE)
                 Expanded(
                   child: _carrito.isEmpty
                       ? Center(
@@ -303,23 +445,56 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                                   tag: 'p_${p.id}', // <--- HERO DESTINO
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(10),
-                                    child:
-                                        (p.urlImagen != null &&
-                                            p.urlImagen != "")
-                                        ? Image.file(
-                                            File(p.urlImagen!),
-                                            width: 55,
-                                            height: 55,
-                                            fit: BoxFit.cover,
-                                          )
-                                        : Container(
-                                            color: Colors.grey[200],
-                                            width: 55,
-                                            height: 55,
-                                            child: const Icon(
-                                              Icons.inventory_2,
+                                    child: SizedBox(
+                                      width: 55,
+                                      height: 55,
+                                      // --- AQUÍ ESTÁ LA CORRECCIÓN ---
+                                      // Verificamos si es http (internet) o archivo local
+                                      child:
+                                          (p.urlImagen != null &&
+                                              p.urlImagen != "")
+                                          ? (p.urlImagen!.startsWith('http')
+                                                ? Image.network(
+                                                    p.urlImagen!,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder:
+                                                        (
+                                                          context,
+                                                          error,
+                                                          stackTrace,
+                                                        ) => Container(
+                                                          color:
+                                                              Colors.grey[200],
+                                                          child: const Icon(
+                                                            Icons.broken_image,
+                                                            color: Colors.grey,
+                                                          ),
+                                                        ),
+                                                  )
+                                                : Image.file(
+                                                    File(p.urlImagen!),
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder:
+                                                        (
+                                                          context,
+                                                          error,
+                                                          stackTrace,
+                                                        ) => Container(
+                                                          color:
+                                                              Colors.grey[200],
+                                                          child: const Icon(
+                                                            Icons.folder_off,
+                                                            color: Colors.grey,
+                                                          ),
+                                                        ),
+                                                  ))
+                                          : Container(
+                                              color: Colors.grey[200],
+                                              child: const Icon(
+                                                Icons.inventory_2,
+                                              ),
                                             ),
-                                          ),
+                                    ),
                                   ),
                                 ),
                                 title: Text(
@@ -332,7 +507,6 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                                 trailing: Container(
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(12),
-                                    // Un color de fondo muy suave para todo el grupo (opcional)
                                     color:
                                         Theme.of(context).brightness ==
                                             Brightness.dark
@@ -350,17 +524,13 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                                         onPressed: () =>
                                             _quitarDelCarrito(index),
                                       ),
-
-                                      // --- ESTE ES TU INDICADOR DE CANTIDAD FLOTANTE ---
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 12,
                                           vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Theme.of(
-                                            context,
-                                          ).cardColor, // Fondo del tema (blanco o gris oscuro)
+                                          color: Theme.of(context).cardColor,
                                           borderRadius: BorderRadius.circular(
                                             8,
                                           ),
@@ -376,10 +546,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                                                 0.1,
                                               ),
                                               blurRadius: 4,
-                                              offset: const Offset(
-                                                0,
-                                                2,
-                                              ), // Sombra hacia abajo para el "relieve"
+                                              offset: const Offset(0, 2),
                                             ),
                                           ],
                                         ),
@@ -391,8 +558,6 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                                           ),
                                         ),
                                       ),
-
-                                      // -----------------------------------------------
                                       IconButton(
                                         icon: const Icon(
                                           Icons.add,
@@ -409,7 +574,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                         ),
                 ),
 
-                // PANEL DE TOTAL (IDEA #9: GRADIENTE)
+                // PANEL DE TOTAL
                 Container(
                   padding: const EdgeInsets.all(25),
                   decoration: BoxDecoration(
@@ -481,85 +646,6 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                 ),
               ],
             ),
-    );
-  }
-
-  // SELECTOR DE PRODUCTOS (IDEA #2: HERO ORIGEN)
-  void _mostrarSelectorProductos(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-      ),
-      builder: (ctx) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Container(
-                width: 50,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                "Selecciona Productos",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 15),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _listaProductos.length,
-                  itemBuilder: (ctx, i) {
-                    final prod = _listaProductos[i];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      child: ListTile(
-                        leading: Hero(
-                          tag: 'p_${prod.id}', // <--- HERO ORIGEN
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child:
-                                (prod.urlImagen != null && prod.urlImagen != "")
-                                ? (prod.urlImagen!.startsWith('http')
-                                      ? Image.network(
-                                          prod.urlImagen!,
-                                          width: 45,
-                                          height: 45,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : Image.file(
-                                          File(prod.urlImagen!),
-                                          width: 45,
-                                          height: 45,
-                                          fit: BoxFit.cover,
-                                        ))
-                                : const Icon(Icons.inventory_2),
-                          ),
-                        ),
-                        title: Text(
-                          prod.nombre,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          "Stock: ${prod.stock} • S/ ${prod.precio}",
-                        ),
-                        onTap: () {
-                          _agregarAlCarrito(prod);
-                          Navigator.pop(ctx);
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

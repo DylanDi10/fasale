@@ -1,8 +1,9 @@
+import 'dart:io';
+import 'package:cotizaciones_app/db/supabase_service.dart';
 import 'package:cotizaciones_app/models/client_model.dart';
 import 'package:cotizaciones_app/utils/pdf_generator.dart';
 import 'package:cotizaciones_app/widgets/empty_state.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../db/database_helper.dart';
 import '../models/quote_model.dart';
@@ -26,6 +27,7 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen> {
+  DateTime? _fechaFiltro; // Si es null, mostramos todas
   double _totalGanancias = 0.0;
   List<Cotizacion> _listaVentas = [];
   Map<int, String> _nombresClientes = {};
@@ -37,7 +39,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   void _cargarDatos() async {
-    final db = DatabaseHelper.instance;
+    final db = SupabaseService.instance;
     double total = await db.obtenerTotalVentas(
       usuarioIdEspecifico: widget.usuarioIdExterno,
     );
@@ -61,6 +63,28 @@ class _ReportsScreenState extends State<ReportsScreen> {
       });
     }
   }
+  // --- FUNCIÓN PARA FORMATEAR FECHAS ---
+  String _obtenerTextoFecha(String fechaString) {
+    try {
+      // Cortamos solo la parte de la fecha (por si tiene hora)
+      String soloFecha = fechaString.split(' ')[0]; 
+      DateTime fecha = DateTime.parse(soloFecha);
+      DateTime hoy = DateTime.now();
+      DateTime ayer = hoy.subtract(const Duration(days: 1));
+
+      // Comparamos los días
+      if (fecha.year == hoy.year && fecha.month == hoy.month && fecha.day == hoy.day) {
+        return "HOY";
+      } else if (fecha.year == ayer.year && fecha.month == ayer.month && fecha.day == ayer.day) {
+        return "AYER";
+      } else {
+        // Formato clásico: DD/MM/YYYY
+        return "${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}";
+      }
+    } catch (e) {
+      return fechaString.split(' ')[0]; // Fallback por si la fecha tiene otro formato
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,13 +92,50 @@ class _ReportsScreenState extends State<ReportsScreen> {
     String titulo = esModoAdmin
         ? "Cotizaciones de: ${widget.nombreVendedorExterno}"
         : "Mis Cotizaciones";
-    Color colorTema = esModoAdmin ? Colors.orange : Colors.purple;
+    Color colorTema = esModoAdmin ? Colors.orange : Colors.indigo;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(titulo),
-        backgroundColor: colorTema,
-        foregroundColor: Colors.white,
+        title: Text("Historial de Ventas"),
+        actions: [
+          // Botón para limpiar el filtro (ver todas)
+          if (_fechaFiltro != null)
+            IconButton(
+              icon: Icon(Icons.clear),
+              onPressed: () {
+                setState(() => _fechaFiltro = null);
+                _cargarDatos(); // Tu función normal que carga todo
+              },
+            ),
+
+          // Botón del Calendario
+          IconButton(
+            icon: Icon(Icons.calendar_month),
+            onPressed: () async {
+              DateTime? fechaElegida = await showDatePicker(
+                context: context,
+                initialDate: _fechaFiltro ?? DateTime.now(),
+                firstDate: DateTime(2024), 
+                lastDate: DateTime.now(),  
+              );
+
+              if (fechaElegida != null) {
+                setState(() => _fechaFiltro = fechaElegida);
+                
+                // 1. Traemos las ventas de ese día
+                final filtradas = await SupabaseService.instance.obtenerVentasPorDia(fechaElegida);
+                
+                // 2. Calculamos cuánto se ganó ese día en específico
+                double totalDelDia = filtradas.fold(0.0, (sum, item) => sum + item.total);
+
+                setState(() {
+                  _listaVentas = filtradas; // <-- ¡ERROR CORREGIDO! Asignamos la lista directo
+                  _totalGanancias = totalDelDia; // Actualizamos el panel de arriba
+                });
+              }
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -124,14 +185,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ],
             ),
           ),
-            Divider(
-              thickness: 1, // Más delgado se ve más profesional
-              indent: 20,   // Un pequeño margen a los lados lo hace ver "premium"
-              endIndent: 20,
-              color: Theme.of(context).brightness == Brightness.dark 
-                  ? Colors.white10  // Un blanco casi transparente para modo oscuro
-                  : Colors.grey[300], // Gris suave para modo claro
-            ),          Expanded(
+          Divider(
+            thickness: 1,
+            indent: 20,
+            endIndent: 20,
+            color: Theme.of(context).brightness == Brightness.dark 
+                ? Colors.white10 
+                : Colors.grey[300],
+          ),
+          Expanded(
             child: _listaVentas.isEmpty
                 ? EmptyState(
                     mensaje: "Aún no tienes cotizaciones.\n¡Empieza una ahora!",
@@ -142,18 +204,36 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     itemBuilder: (context, index) {
                       final venta = _listaVentas[index];
                       String nombreCliente = _nombresClientes[venta.clienteId] ?? "Desconocido";
-                      Color colorEstado = venta.estado == "Aprobada"
+                      
+                      Color colorEstado = (venta.estado.toLowerCase() == "aprobada" || venta.estado.toLowerCase() == "aprobado")
                           ? Colors.green
-                          : venta.estado == "Rechazada"
+                          : (venta.estado.toLowerCase() == "rechazada" || venta.estado.toLowerCase() == "rechazado")
                               ? Colors.red
                               : Colors.orange;
 
-                      return Card(
+                      // --- LÓGICA PARA LOS SEPARADORES DE FECHA ---
+                      final String fechaActual = venta.fecha.split(' ')[0];
+                      bool mostrarSeparador = false;
+
+                      // Si es el primer elemento, siempre mostramos separador
+                      if (index == 0) {
+                        mostrarSeparador = true;
+                      } else {
+                        // Comparamos con el elemento anterior
+                        final String fechaAnterior = _listaVentas[index - 1].fecha.split(' ')[0];
+                        if (fechaActual != fechaAnterior) {
+                          mostrarSeparador = true; // Cambió el día, mostramos separador
+                        }
+                      }
+
+                      // Este es el Card original que ya tenías
+                      Widget tarjetaVenta = Card(
                         margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         elevation: 0,
+                        color: Theme.of(context).cardColor, // Respeta el modo oscuro
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(15),
-                          side: BorderSide(color: Colors.grey[200]!),
+                          side: BorderSide(color: Colors.grey.withOpacity(0.2)),
                         ),
                         child: ListTile(
                           contentPadding: EdgeInsets.all(15),
@@ -186,7 +266,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             children: [
                               Text(
                                 "S/ ${venta.total.toStringAsFixed(2)}",
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.indigo[900]),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold, 
+                                  fontSize: 16, 
+                                  color: Colors.blue[700] // Azul a juego con tu UI
+                                ),
                               ),
                               Icon(Icons.chevron_right, size: 18, color: Colors.grey),
                             ],
@@ -194,6 +278,31 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           onTap: () => _mostrarDetalleVenta(context, venta),
                         ),
                       );
+
+                      // Si debe mostrar separador, envolvemos la tarjeta en una columna
+                      if (mostrarSeparador) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(left: 24, top: 20, bottom: 5),
+                              child: Text(
+                                _obtenerTextoFecha(fechaActual),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                            tarjetaVenta,
+                          ],
+                        );
+                      } else {
+                        // Si es del mismo día que el anterior, solo devolvemos la tarjeta normal
+                        return tarjetaVenta;
+                      }
                     },
                   ),
           ),
@@ -201,42 +310,75 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ),
     );
   }
-
-  void _enviarAWhatsApp(Cotizacion venta) async {
-    final prefs = await SharedPreferences.getInstance();
-    String nombreVendedor = prefs.getString('nombre_vendedor') ?? "Tu Asesor";
-    final db = await DatabaseHelper.instance.database;
-    final maps = await db.query('clientes', where: 'id = ?', whereArgs: [venta.clienteId]);
-
-    if (maps.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: Cliente no encontrado")));
-      return;
+  // --- NUEVA FUNCIÓN DE WHATSAPP ---
+  Future<void> _enviarWhatsAppSinGuardar(String numeroTelefono, String urlPdf) async {
+    String numeroLimpio = numeroTelefono.replaceAll(RegExp(r'[^0-9]'), '');
+    if (numeroLimpio.length == 9) {
+      numeroLimpio = '51$numeroLimpio';
     }
+    
+    // Si generas el PDF localmente, en vez de urlPdf enviamos un saludo
+    final String mensaje = "Hola, le escribo de FASALE. Aquí tengo la cotización que solicitó.";
+    final Uri url = Uri.parse("https://wa.me/$numeroLimpio?text=${Uri.encodeComponent(mensaje)}");
 
-    final cliente = Cliente.fromMap(maps.first);
-    String telefono = cliente.telefono ?? "";
-    if (telefono.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("El cliente no tiene teléfono")));
-      return;
-    }
-
-    String mensaje = "Hola *${cliente.nombre}*! , te saluda *$nombreVendedor* 👋\nAquí tienes el detalle de tu cotización #${venta.id}:\n\n";
-    for (var item in venta.productos) {
-      mensaje += "▪ ${item['nombre']} (x${item['cantidad']}) = S/ ${item['precio_unitario']}\n";
-    }
-    mensaje += "\n*TOTAL: S/ ${venta.total}*\n\n_Gracias por tu preferencia_ 🤝";
-
-    String telefonoFinal = telefono.replaceAll(RegExp(r'[^0-9]'), '');
-    if (telefonoFinal.length == 9) telefonoFinal = "51$telefonoFinal";
-    final Uri url = Uri.parse("https://wa.me/$telefonoFinal?text=${Uri.encodeComponent(mensaje)}");
-
-    try {
-      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) throw 'No se pudo lanzar';
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("No se pudo abrir WhatsApp: $e")));
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      print("No se pudo abrir WhatsApp");
     }
   }
+  void _mostrarDialogoWhatsApp(BuildContext context, Cotizacion venta) async {
+    TextEditingController _numeroController = TextEditingController();
 
+    // Intentamos buscar el teléfono del cliente si ya existe en la BD
+    Cliente? cliente = await SupabaseService.instance.obtenerClientePorId(venta.clienteId);
+    if (cliente != null && cliente.telefono != null) {
+      _numeroController.text = cliente.telefono!;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctxDialog) => AlertDialog(
+        title: const Text("Enviar a WhatsApp", style: TextStyle(fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: _numeroController,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(
+            hintText: "Ej: 999888777",
+            labelText: "Número del cliente",
+            prefixIcon: Icon(Icons.phone_android),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctxDialog),
+            child: const Text("CANCELAR"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              String numero = _numeroController.text;
+              if (numero.isNotEmpty) {
+                Navigator.pop(ctxDialog); // Cerramos el dialogo
+                Navigator.pop(context); // Cerramos el modal de detalle
+                
+                // 1. Abrimos el chat de WhatsApp con el saludo
+                await _enviarWhatsAppSinGuardar(numero, "");
+                
+                // 2. Un segundo después, disparamos tu función actual que abre el PDF
+                // para que el vendedor solo le dé a "Compartir" hacia el chat que acaba de abrir.
+                await Future.delayed(const Duration(seconds: 1));
+                if (cliente != null) {
+                   await PdfGenerator.generarYCompartirPDF(venta, cliente);
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text("ABRIR CHAT Y ENVIAR"),
+          ),
+        ],
+      ),
+    );
+  }
   void _mostrarDetalleVenta(BuildContext context, Cotizacion venta) {
     showModalBottomSheet(
       context: context,
@@ -248,24 +390,49 @@ class _ReportsScreenState extends State<ReportsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // --- CABECERA ---
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text("Detalle de la Cotización #${venta.id}", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  Text("Detalle #${venta.id}", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   IconButton(icon: Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
                 ],
               ),
               Divider(),
+              
+              // --- LISTA DE PRODUCTOS ---
               Expanded(
                 child: ListView.builder(
                   itemCount: venta.productos.length,
                   itemBuilder: (ctx, i) {
                     final item = venta.productos[i];
                     return ListTile(
-                      // --- AQUÍ ESTÁ EL HERO (PASO FINAL) ---
                       leading: Hero(
-                        tag: 'p_${item['id']}', // Tag idéntico al de NuevaVentaScreen
-                        child: Icon(Icons.shopping_bag_outlined, color: Colors.indigo),
+                        tag: 'p_${item['id']}_report_${venta.id}', // Tag único para evitar conflictos
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: SizedBox(
+                            width: 50, 
+                            height: 50,
+                            // LÓGICA HÍBRIDA:
+                            child: (item['imagen'] != null && item['imagen'].toString().isNotEmpty)
+                                ? (item['imagen'].toString().startsWith('http')
+                                    ? Image.network(
+                                        item['imagen'],
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (ctx, err, stack) => Container(color: Colors.grey[300], child: Icon(Icons.broken_image, size: 20)),
+                                      )
+                                    : Image.file(
+                                        File(item['imagen']),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (ctx, err, stack) => Container(color: Colors.grey[300], child: Icon(Icons.folder_off, size: 20)),
+                                      ))
+                                : Container(
+                                    color: Colors.indigo.withOpacity(0.1),
+                                    child: Icon(Icons.shopping_bag_outlined, color: Colors.indigo),
+                                  ),
+                          ),
+                        ),
                       ),
                       title: Text(item['nombre'] ?? 'Producto'),
                       subtitle: Text("Cantidad: ${item['cantidad']}"),
@@ -275,6 +442,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 ),
               ),
               Divider(),
+              
+              // --- TOTAL Y ESTADO ---
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -283,24 +452,26 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 ],
               ),
               SizedBox(height: 10),
-              Text("Estado Actual: ${venta.estado}", style: TextStyle(fontWeight: FontWeight.bold)),
-              SizedBox(height: 10),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _botonEstado(ctx, venta, "Pendiente", Colors.orange),
-                  _botonEstado(ctx, venta, "Aprobada", Colors.green),
-                  _botonEstado(ctx, venta, "Rechazada", Colors.red),
+                  _botonEstado(ctx, venta, "Aprobado", Colors.green),
+                  _botonEstado(ctx, venta, "Rechazado", Colors.red),
                 ],
               ),
               Divider(),
+
+              // --- BOTONES DE ACCIÓN ---
+              
+              // 1. BOTÓN EDITAR (Igual que antes)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue[800],
                     foregroundColor: Colors.white,
-                    minimumSize: Size(double.infinity, 50), // Uso de minimumSize para evitar error de height
+                    minimumSize: Size(double.infinity, 50),
                   ),
                   icon: Icon(Icons.edit),
                   label: Text("EDITAR PRODUCTOS / CLIENTE"),
@@ -321,46 +492,60 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 ),
               ),
               SizedBox(height: 10),
+
+              // 2. BOTÓN COMPARTIR PDF (NUEVO Y MEJORADO) ⚡
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: Colors.green[700], // Verde tipo WhatsApp/Share
                     foregroundColor: Colors.white,
                     minimumSize: Size(double.infinity, 50),
                   ),
-                  icon: Icon(Icons.send),
-                  label: Text("ENVIAR POR WHATSAPP"),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _enviarAWhatsApp(venta);
-                  },
-                ),
-              ),
-              SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red[700],
-                    foregroundColor: Colors.white,
-                    minimumSize: Size(double.infinity, 50),
-                  ),
-                  icon: Icon(Icons.picture_as_pdf),
-                  label: Text("GENERAR PDF"),
+                  icon: Icon(Icons.share_rounded), // Icono universal de compartir
+                  label: Text("COMPARTIR COTIZACIÓN (PDF)"),
                   onPressed: () async {
-                    final db = await DatabaseHelper.instance.database;
-                    final maps = await db.query('clientes', where: 'id = ?', whereArgs: [venta.clienteId]);
-                    if (maps.isNotEmpty) {
-                      Cliente cliente = Cliente.fromMap(maps.first);
-                      Navigator.pop(ctx);
-                      await PdfGenerator.generarPDF(venta, cliente);
+                    // Feedback visual: "Espere un momento"
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Generando PDF... por favor espere')),
+                    );
+
+                    // 1. Buscamos al cliente en la BD para tener su nombre
+                    // Buscamos al cliente directo en la nube
+                    Cliente? cliente = await SupabaseService.instance.obtenerClientePorId(venta.clienteId);
+
+                    if (cliente != null) {
+                      Navigator.pop(ctx); // Cerramos el modal
+                      
+                      // LLAMAMOS A LA FUNCIÓN GENERAR Y COMPARTIR
+                      await PdfGenerator.generarYCompartirPDF(venta, cliente);
                     } else {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: No se encontró al cliente")));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Error: No se encontró al cliente asociado")),
+                      );
                     }
                   },
                 ),
               ),
+              // 3. BOTÓN ENVIAR POR WHATSAPP DIRECTO ⚡
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green[600], // Verde característico de WhatsApp
+                    foregroundColor: Colors.white,
+                    minimumSize: Size(double.infinity, 50),
+                  ),
+                  // Usamos un icono representativo
+                  icon: Icon(Icons.chat_outlined), 
+                  label: Text("ENVIAR POR WHATSAPP (SIN GUARDAR)"),
+                  onPressed: () {
+                     // Llama al cuadro de diálogo que armamos
+                     _mostrarDialogoWhatsApp(context, venta);
+                  },
+                ),
+              ),
+              SizedBox(height: 10), // Espacio final
             ],
           ),
         );
@@ -369,30 +554,52 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _botonEstado(BuildContext ctx, Cotizacion venta, String nuevoEstado, Color color) {
+    // Blindaje: Comparamos todo en minúsculas y solo las primeras 7 letras 
+    // ("Aprobad") para ignorar si termina en A o en O.
+    bool esEstadoActual = venta.estado.toLowerCase().startsWith(nuevoEstado.toLowerCase().substring(0, 7));
+
     return InkWell(
-      onTap: () async {
-        Cotizacion ventaActualizada = Cotizacion(
-          id: venta.id,
-          clienteId: venta.clienteId,
-          usuarioId: venta.usuarioId,
-          fecha: venta.fecha,
-          total: venta.total,
-          productos: venta.productos,
-          estado: nuevoEstado,
-        );
-        await DatabaseHelper.instance.actualizarCotizacion(ventaActualizada);
+      // Si ya está en ese estado, onTap es NULL y el botón queda desactivado
+      onTap: esEstadoActual ? null : () async { 
+        
+        // --- LÓGICA DE STOCK AQUÍ ---
+        if (nuevoEstado.startsWith('Aprobad') && !venta.estado.toLowerCase().startsWith('aprobad')) {
+          // Descuenta stock y cambia estado
+          await SupabaseService.instance.aprobarCotizacionYDescontarStock(venta);
+        } else {
+          // Solo actualiza texto
+          Cotizacion ventaActualizada = Cotizacion(
+            id: venta.id,
+            clienteId: venta.clienteId,
+            usuarioId: venta.usuarioId,
+            fecha: venta.fecha,
+            total: venta.total,
+            productos: venta.productos,
+            estado: nuevoEstado,
+          );
+          await SupabaseService.instance.actualizarCotizacion(ventaActualizada);
+        }
+
         Navigator.pop(ctx);
-        _cargarDatos();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Estado cambiado a $nuevoEstado"), backgroundColor: color));
+        _cargarDatos(); 
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Estado cambiado a $nuevoEstado"), backgroundColor: color)
+        );
       },
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.2),
+          color: esEstadoActual ? color : color.withOpacity(0.1),
           border: Border.all(color: color),
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(nuevoEstado, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+        child: Text(
+          nuevoEstado, 
+          style: TextStyle(
+            color: esEstadoActual ? Colors.white : color, 
+            fontWeight: FontWeight.bold
+          )
+        ),
       ),
     );
   }

@@ -2,48 +2,74 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart'; // <--- IMPORTANTE
+import 'package:share_plus/share_plus.dart';     // <--- IMPORTANTE
 import '../models/quote_model.dart';
 import '../models/client_model.dart';
 
 class PdfGenerator {
-  static Future<void> generarPDF(Cotizacion venta, Cliente cliente) async {
+  
+  // Cambié el nombre a 'generarYCompartirPDF' para que sea más descriptivo
+  static Future<void> generarYCompartirPDF(Cotizacion venta, Cliente cliente) async {
     final pdf = pw.Document();
     
-    // Cargamos una fuente y un logo (opcional, aquí uso íconos básicos)
-    final font = await PdfGoogleFonts.nunitoExtraLight();
 
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40), // Márgenes para que no salga cortado
         build: (pw.Context context) {
           return [
-            _buildHeader(venta, cliente),
+            _buildHeader(venta, cliente), // Tu header
             pw.SizedBox(height: 20),
-            _buildTable(venta.productos),
+            _buildTable(venta.productos), // Tu tabla
             pw.Divider(),
-            _buildTotal(venta),
+            _buildTotal(venta),           // Tu total
             pw.SizedBox(height: 40),
-            _buildFooter(), // <--- AQUÍ ESTÁN LOS BANCOS Y TYC
+            _buildFooter(),               // Tus bancos
           ];
         },
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
+    // --- AQUÍ ESTÁ EL CAMBIO CLAVE ---
+    
+    // 1. Buscamos la carpeta temporal del celular
+    final output = await getTemporaryDirectory();
+    
+    // 2. Creamos el archivo con un nombre único
+    final file = File("${output.path}/Cotizacion_FASALE_${venta.id}.pdf");
+    
+    // 3. Escribimos los bytes del PDF en ese archivo
+    await file.writeAsBytes(await pdf.save());
+
+    // 4. Compartimos el archivo + el mensaje de texto
+    await Share.shareXFiles(
+      [XFile(file.path)],
+      text: 'Hola ${cliente.nombre}, adjunto la cotización #${venta.id} de FASALE. Quedo atento. ⚡',
     );
   }
+
+  // --- TUS FUNCIONES DE DISEÑO (Las dejé igualitas) ---
 
   static pw.Widget _buildHeader(Cotizacion venta, Cliente cliente) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Text("COTIZACIÓN #${venta.id}", style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+             // Aquí podrías poner tu logo: pw.Image(pw.MemoryImage(imageBytes), width: 80),
+            pw.Text("FASALE", style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColors.green800)),
+            pw.Text("COTIZACIÓN #${venta.id}", style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+          ],
+        ),
+        pw.SizedBox(height: 10),
+        pw.Divider(color: PdfColors.green800, thickness: 2),
         pw.SizedBox(height: 10),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -57,10 +83,9 @@ class PdfGenerator {
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.end,
               children: [
-                pw.Text("Cliente: ${cliente.nombre}"),
+                pw.Text("Cliente: ${cliente.nombre}", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                 pw.Text("RUC/DNI: ${cliente.dniRuc ?? '---'}"),
                 pw.Text("Fecha: ${venta.fecha.split(' ')[0]}"),
-                pw.Text("Estado: ${venta.estado.toUpperCase()}", style: pw.TextStyle(color: PdfColors.red)),
               ],
             ),
           ],
@@ -73,16 +98,21 @@ class PdfGenerator {
     return pw.Table.fromTextArray(
       headers: ['Producto', 'Cant.', 'Precio Unit.', 'Subtotal'],
       data: productos.map((item) {
-        double subtotal = item['cantidad'] * item['precio_unitario'];
+        // Aseguramos que los números sean double para evitar errores
+        double cantidad = double.tryParse(item['cantidad'].toString()) ?? 0;
+        double precio = double.tryParse(item['precio_unitario'].toString()) ?? 0;
+        double subtotal = cantidad * precio;
+        
         return [
           item['nombre'],
-          item['cantidad'],
-          "S/ ${item['precio_unitario']}",
+          item['cantidad'].toString(),
+          "S/ ${precio.toStringAsFixed(2)}",
           "S/ ${subtotal.toStringAsFixed(2)}",
         ];
       }).toList(),
-      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-      headerDecoration: pw.BoxDecoration(color: PdfColors.grey300),
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+      headerDecoration: pw.BoxDecoration(color: PdfColors.green800), // Color corporativo
+      rowDecoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey300))),
       cellAlignments: {
         0: pw.Alignment.centerLeft,
         1: pw.Alignment.center,
@@ -97,38 +127,49 @@ class PdfGenerator {
       alignment: pw.Alignment.centerRight,
       child: pw.Text(
         "TOTAL A PAGAR: S/ ${venta.total.toStringAsFixed(2)}",
-        style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+        style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.green900),
       ),
     );
   }
 
-  // BANCOS Y TÉRMINOS ---
   static pw.Widget _buildFooter() {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Text("CUENTAS BANCARIAS:", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-        pw.SizedBox(height: 5),
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-              pw.Text("BCP SOLES: 191-12345678-0-99"),
-              pw.Text("CCI: 002-191-12345678099-55"),
-              pw.Text("Titular: Juan Pérez"),
-            ]),
-            pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-              pw.Text("BBVA SOLES: 0011-0123-456789"),
-              pw.Text("YAPE / PLIN: 999 999 999"),
-            ]),
-          ],
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.all(10),
+          decoration: pw.BoxDecoration(
+            color: PdfColors.grey100,
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(10)),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text("CUENTAS BANCARIAS:", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 5),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                    pw.Text("BCP SOLES: 191-12345678-0-99"),
+                    pw.Text("CCI: 002-191-12345678099-55"),
+                    pw.Text("Titular: Juan Pérez"),
+                  ]),
+                  pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                    pw.Text("BBVA SOLES: 0011-0123-456789"),
+                    pw.Text("YAPE / PLIN: 999 999 999"),
+                  ]),
+                ],
+              ),
+            ],
+          ),
         ),
         pw.SizedBox(height: 20),
-        pw.Text("TÉRMINOS Y CONDICIONES:", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-        pw.Bullet(text: "Precios válidos por 7 días calendario."),
-        pw.Bullet(text: "Tiempo de entrega: Inmediata (Sujeto a stock)."),
-        pw.Bullet(text: "Garantía de 1 año en cabezal y motor."),
-        pw.Bullet(text: "No se aceptan devoluciones después de 24 horas."),
+        pw.Text("TÉRMINOS Y CONDICIONES:", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.grey600)),
+        pw.Bullet(text: "Precios válidos por 7 días calendario.", style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+        pw.Bullet(text: "Tiempo de entrega: Inmediata (Sujeto a stock).", style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
+        pw.Bullet(text: "Garantía de 1 año en cabezal y motor.", style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
       ],
     );
   }

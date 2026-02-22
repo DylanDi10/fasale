@@ -1,4 +1,6 @@
+import 'package:cotizaciones_app/db/supabase_service.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../db/database_helper.dart';
 import '../models/user_model.dart';
 import 'report_screen.dart'; // Importante para poder ir al detalle
@@ -21,8 +23,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   }
 
   void _cargarVendedores() async {
-    // Usamos la función nueva que pusiste en tu DatabaseHelper
-    final lista = await DatabaseHelper.instance.obtenerTodosLosUsuarios();
+    final lista = await SupabaseService.instance.obtenerTodosLosUsuarios();
     if (mounted) {
       setState(() {
         _vendedores = lista;

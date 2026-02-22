@@ -1,4 +1,6 @@
+import 'package:cotizaciones_app/db/supabase_service.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../db/database_helper.dart';
 import '../models/client_model.dart';
 
@@ -41,9 +43,9 @@ class _ClienteFormScreenState extends State<ClienteFormScreen> {
       );
 
       if (widget.cliente == null) {
-        await DatabaseHelper.instance.insertarCliente(modelo);
+        await SupabaseService.instance.insertarCliente(modelo);
       } else {
-        await DatabaseHelper.instance.actualizarCliente(modelo);
+        await SupabaseService.instance.actualizarCliente(modelo);
       }
       Navigator.pop(context);
     }
