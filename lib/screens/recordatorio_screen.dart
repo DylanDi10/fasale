@@ -225,82 +225,107 @@ class _RecordatoriosScreenState extends State<RecordatoriosScreen> {
     final TextEditingController _descripcionController = TextEditingController();
     DateTime _fechaSeleccionada = _diaSeleccionado ?? DateTime.now();
     TimeOfDay _horaSeleccionada = TimeOfDay.now();
+    
+    // 🔔 Variable para los minutos (dentro de la función)
+    int _minutosDeAviso = 30; 
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // Para que el teclado no tape el formulario
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom, // Ajuste para el teclado
-          top: 20, left: 20, right: 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("Nueva Cita Comercial", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 15),
-            TextField(
-              controller: _descripcionController,
-              decoration: const InputDecoration(
-                labelText: "Descripción de la reunión",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.edit),
-              ),
+      builder: (context) => StatefulBuilder( // <--- Vital para que el Dropdown cambie visualmente
+        builder: (context, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              top: 20, left: 20, right: 20,
             ),
-            const SizedBox(height: 15),
-            ListTile(
-              leading: const Icon(Icons.access_time, color: Colors.teal),
-              title: Text("Hora: ${_horaSeleccionada.format(context)}"),
-              onTap: () async {
-                final TimeOfDay? picked = await showTimePicker(
-                  context: context,
-                  initialTime: _horaSeleccionada,
-                );
-                if (picked != null) setState(() => _horaSeleccionada = picked);
-              },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("Nueva Cita Comercial", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 15),
+                TextField(
+                  controller: _descripcionController,
+                  decoration: const InputDecoration(labelText: "Descripción", border: OutlineInputBorder(), prefixIcon: Icon(Icons.edit)),
+                ),
+                const SizedBox(height: 15),
+                
+                // --- EL DROPDOWN (Selector de tiempo) ---
+                const Text("Avisarme antes:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<int>(
+                  value: _minutosDeAviso,
+                  decoration: const InputDecoration(border: OutlineInputBorder(), prefixIcon: Icon(Icons.timer)),
+                  items: const [
+                    DropdownMenuItem(value: 10, child: Text("10 minutos antes")),
+                    DropdownMenuItem(value: 30, child: Text("30 minutos antes")),
+                    DropdownMenuItem(value: 60, child: Text("1 hora antes")),
+                  ],
+                  onChanged: (val) => setModalState(() => _minutosDeAviso = val!),
+                ),
+                
+                const SizedBox(height: 15),
+                ListTile(
+                  leading: const Icon(Icons.access_time, color: Colors.teal),
+                  title: Text("Hora: ${_horaSeleccionada.format(context)}"),
+                  onTap: () async {
+                    final TimeOfDay? picked = await showTimePicker(context: context, initialTime: _horaSeleccionada);
+                    if (picked != null) setModalState(() => _horaSeleccionada = picked);
+                  },
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[800], foregroundColor: Colors.white),
+                    onPressed: () async {
+                      if (_descripcionController.text.isEmpty) return;
+
+                      // 1. Capturamos el Navigator ANTES de los awaits para que no se pierda el contexto
+                      final navigator = Navigator.of(context);
+
+                      // 2. Unimos Fecha + Hora
+                      final DateTime fechaFinal = DateTime(
+                        _fechaSeleccionada.year, _fechaSeleccionada.month, _fechaSeleccionada.day,
+                        _horaSeleccionada.hour, _horaSeleccionada.minute,
+                      );
+
+                      // 3. Guardar en Supabase
+                      await SupabaseService.instance.insertarRecordatorio(Recordatorio(
+                        usuarioId: widget.usuarioActual.id!,
+                        fechaProgramada: fechaFinal,
+                        descripcion: _descripcionController.text,
+                        estado: 'Pendiente',
+                      ));
+
+                      // 4. Programar Alarma (Usando la variable _minutosDeAviso del dropdown)
+                      final horaAlarma = fechaFinal.subtract(Duration(minutes: _minutosDeAviso));
+                      final int idNoti = DateTime.now().millisecondsSinceEpoch.remainder(100000);
+                      
+                      await NotificationService().programarNotificacion(
+                        idNoti,
+                        "Cita en $_minutosDeAviso min ⏰",
+                        _descripcionController.text,
+                        horaAlarma,
+                      );
+
+                      // 5. Usamos la referencia segura del navigator para cerrar el modal
+                      navigator.pop(); 
+                      
+                      // 6. Recargamos la lista del calendario
+                      _cargarRecordatoriosDesdeBD();
+                    },
+                    child: const Text("AGENDAR CITA"),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
             ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[800], foregroundColor: Colors.white),
-                onPressed: () async {
-                  if (_descripcionController.text.isEmpty) return;
-
-                  // Unimos Fecha + Hora
-                  final DateTime fechaFinal = DateTime(
-                    _fechaSeleccionada.year, _fechaSeleccionada.month, _fechaSeleccionada.day,
-                    _horaSeleccionada.hour, _horaSeleccionada.minute,
-                  );
-
-                  final nuevoRecordatorio = Recordatorio(
-                    usuarioId: widget.usuarioActual.id!,
-                    fechaProgramada: fechaFinal,
-                    descripcion: _descripcionController.text,
-                    estado: 'Pendiente',
-                  );
-
-                  await SupabaseService.instance.insertarRecordatorio(nuevoRecordatorio);
-                  final int idNotificacion = DateTime.now().millisecondsSinceEpoch.remainder(100000);
-                  
-                  await NotificationService().programarNotificacion(
-                    idNotificacion,
-                    "¡Reunión en 30 minutos! ⏰",
-                    "Cita: ${_descripcionController.text}",
-                    fechaFinal, // Esta es la variable donde juntaste la fecha y la hora
-                  );
-                  Navigator.pop(context); // Cierra el formulario
-                  _cargarRecordatoriosDesdeBD(); // Recarga el calendario
-                },
-                child: const Text("AGENDAR CITA"),
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
+          );
+        }
       ),
     );
   }

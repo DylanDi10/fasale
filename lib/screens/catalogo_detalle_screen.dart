@@ -61,7 +61,7 @@ class CatalogoDetalleScreen extends StatelessWidget {
                         Text(producto.nombre, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
                         Text(
-                          "Precio referencial: S/ ${producto.precio.toStringAsFixed(2)}",
+                          "Precio referencial: USD ${producto.precio.toStringAsFixed(2)}",
                           // En modo oscuro hacemos el azul un poco más claro para que resalte
                           style: TextStyle(fontSize: 20, color: isDarkMode ? Colors.blue[300] : Colors.blue[700], fontWeight: FontWeight.bold),
                         ),

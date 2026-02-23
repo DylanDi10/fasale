@@ -15,8 +15,9 @@ import 'about_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final Usuario usuario;
+  final bool esAdmin;
 
-  const HomeScreen({Key? key, required this.usuario}) : super(key: key);
+  const HomeScreen({Key? key, required this.usuario, required this.esAdmin}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +110,7 @@ class HomeScreen extends StatelessWidget {
                 onTap: () {
                   Navigator.push(
                     context, 
-                    MaterialPageRoute(builder: (context) => ProductsScreen())
+                    MaterialPageRoute(builder: (context) => ProductsScreen(esAdmin: esAdmin))
                   );
                 },
               ),

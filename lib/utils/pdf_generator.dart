@@ -106,8 +106,8 @@ class PdfGenerator {
         return [
           item['nombre'],
           item['cantidad'].toString(),
-          "S/ ${precio.toStringAsFixed(2)}",
-          "S/ ${subtotal.toStringAsFixed(2)}",
+          "USD ${precio.toStringAsFixed(2)}",
+          "USD ${subtotal.toStringAsFixed(2)}",
         ];
       }).toList(),
       headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
@@ -126,7 +126,7 @@ class PdfGenerator {
     return pw.Container(
       alignment: pw.Alignment.centerRight,
       child: pw.Text(
-        "TOTAL A PAGAR: S/ ${venta.total.toStringAsFixed(2)}",
+        "TOTAL A PAGAR:USD ${venta.total.toStringAsFixed(2)}",
         style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.green900),
       ),
     );

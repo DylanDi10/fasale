@@ -8,7 +8,6 @@ import 'services/notification_service.dart';
 ValueNotifier<ThemeMode> temaGlobal = ValueNotifier(ThemeMode.system);
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService().init();
 
   if (Platform.isWindows || Platform.isLinux) {
     sqfliteFfiInit();
@@ -21,6 +20,8 @@ void main() async {
     anonKey:
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp4YXhvemFkcWVoeWdoYnVjd3RyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NTg5MTksImV4cCI6MjA4NzAzNDkxOX0.qJ3ENA--r8uEAo9B6L8RxFgFk2XCtH3Rm36z82GFUfQ', // Pega la llave larga
   );
+    await NotificationService().init();
+
 
   runApp(MyApp());
 }

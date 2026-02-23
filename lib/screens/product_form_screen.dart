@@ -6,8 +6,10 @@ import '../models/category_model.dart';
 
 class ProductFormScreen extends StatefulWidget {
   final Producto? producto;
+  final bool esAdmin;
+  
 
-  const ProductFormScreen({Key? key, this.producto}) : super(key: key);
+  const ProductFormScreen({Key? key, this.producto, this.esAdmin = true,}) : super(key: key);
 
   @override
   _ProductFormScreenState createState() => _ProductFormScreenState();
@@ -202,7 +204,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                     child: TextFormField(
                       controller: _modeloController,
                       decoration: const InputDecoration(
-                        labelText: 'Modelo (Ej. DDL)', 
+                        labelText: 'Modelo' , 
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.numbers)
                       ),
@@ -228,9 +230,10 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                 children: [
                   Expanded(
                     child: TextFormField(
+                      enabled: widget.esAdmin,
                       controller: _precioController,
                       decoration: const InputDecoration(
-                        labelText: 'Precio (S/)', 
+                        labelText: 'Precio (USD)', 
                         border: OutlineInputBorder(),
                         prefixIcon: Icon(Icons.attach_money)
                       ),
@@ -241,6 +244,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: TextFormField(
+                      enabled: widget.esAdmin,
                       controller: _stockController,
                       decoration: const InputDecoration(
                         labelText: 'Stock', 
@@ -370,19 +374,20 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               const SizedBox(height: 20),
 
               // BOTÓN GUARDAR
-              SizedBox(
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: _guardarProducto,
-                  icon: const Icon(Icons.save),
-                  label: const Text("GUARDAR"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo,
-                    foregroundColor: Colors.white,
-                    textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              if (widget.esAdmin)
+                SizedBox(
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: _guardarProducto,
+                    icon: const Icon(Icons.save),
+                    label: const Text("GUARDAR"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo,
+                      foregroundColor: Colors.white,
+                      textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(height: 20),
             ],
           ),

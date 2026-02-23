@@ -27,6 +27,7 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen> {
+  bool esAdmin = true;
   DateTime? _fechaFiltro; // Si es null, mostramos todas
   double _totalGanancias = 0.0;
   List<Cotizacion> _listaVentas = [];
@@ -174,7 +175,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 ),
                 SizedBox(height: 5),
                 Text(
-                  "S/ ${_totalGanancias.toStringAsFixed(2)}",
+                  "USD ${_totalGanancias.toStringAsFixed(2)}",
                   style: TextStyle(fontSize: 35, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 SizedBox(height: 3),
@@ -265,7 +266,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                "S/ ${venta.total.toStringAsFixed(2)}",
+                                "USD ${venta.total.toStringAsFixed(2)}",
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold, 
                                   fontSize: 16, 
@@ -436,7 +437,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       ),
                       title: Text(item['nombre'] ?? 'Producto'),
                       subtitle: Text("Cantidad: ${item['cantidad']}"),
-                      trailing: Text("S/ ${item['precio_unitario']}"),
+                      trailing: Text("USD ${item['precio_unitario']}"),
                     );
                   },
                 ),
@@ -448,7 +449,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text("TOTAL:", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  Text("S/ ${venta.total}", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green)),
+                  Text("USD ${venta.total}", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green)),
                 ],
               ),
               SizedBox(height: 10),
@@ -527,6 +528,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   },
                 ),
               ),
+              SizedBox(height: 10), // Espacio final
+
               // 3. BOTÓN ENVIAR POR WHATSAPP DIRECTO ⚡
               SizedBox(
                 width: double.infinity,
@@ -565,7 +568,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
         // --- LÓGICA DE STOCK AQUÍ ---
         if (nuevoEstado.startsWith('Aprobad') && !venta.estado.toLowerCase().startsWith('aprobad')) {
           // Descuenta stock y cambia estado
-          await SupabaseService.instance.aprobarCotizacionYDescontarStock(venta);
+          // Asegúrate de tener la variable esAdmin disponible en esa pantalla también
+        // Llamamos a la función a través de la instancia de tu servicio
+        await SupabaseService.instance.aprobarCotizacionYDescontarStock(venta, esAdmin: esAdmin);
         } else {
           // Solo actualiza texto
           Cotizacion ventaActualizada = Cotizacion(

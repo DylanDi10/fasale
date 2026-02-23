@@ -292,25 +292,33 @@ class SupabaseService {
     required String query,
     required String marca,
     required String modelo,
+    int? categoriaId, // <--- AÑADIMOS ESTO AQUÍ
   }) async {
-    var peticion = _supabase.from('productos').select();
-
-    // Si hay texto en el buscador, filtramos por nombre exacto o parcial
-    if (query.isNotEmpty) {
-      peticion = peticion.ilike('nombre', '%$query%');
-    }
-    // Si hay marca seleccionada (y no es 'Todas')
+    
+    // Inicias tu consulta a la tabla productos
+    var peticion = Supabase.instance.client.from('productos').select();
+    // Filtro de Marca
     if (marca != 'Todas') {
       peticion = peticion.eq('marca', marca);
     }
-    // Si hay modelo seleccionado (y no es 'Todos')
+    
+    // Filtro de Modelo
     if (modelo != 'Todos') {
       peticion = peticion.eq('modelo', modelo);
     }
 
+    // --- NUEVO: Filtro de Categoría ---
+    if (categoriaId != null) {
+      peticion = peticion.eq('categoria_id', categoriaId); // <-- Nombre exacto de la base de datos
+    }
+
+    // Buscador de texto (si lo tienes implementado con ilike)
+    if (query.isNotEmpty) {
+      peticion = peticion.ilike('nombre', '%$query%');
+    }
+
     final response = await peticion;
-    final data = response as List<dynamic>;
-    return data.map((json) => Producto.fromMap(json)).toList();
+    return (response as List).map((e) => Producto.fromMap(e)).toList();
   }
   Future<List<Cliente>> buscarClientesGeneral(String query) async {
     // Si está vacío, no devolvemos nada para no saturar
@@ -326,14 +334,19 @@ class SupabaseService {
     return data.map((json) => Cliente.fromMap(json)).toList();
   }
   // --- 1. APROBAR COTIZACIÓN Y DESCONTAR STOCK ---
-  Future<void> aprobarCotizacionYDescontarStock(Cotizacion coti) async {
-    // 1. Cambiamos el estado de la cotización en la nube a 'Aprobado'
-    await _supabase
-        .from('cotizaciones')
-        .update({'estado': 'Aprobado'})
-        .eq('id', coti.id as Object);
+  // Añadimos el parámetro "esAdmin" a la función
+Future<void> aprobarCotizacionYDescontarStock(Cotizacion coti, {required bool esAdmin}) async {
+  
+  // 1. Cambiamos el estado de la cotización en la nube a 'Aprobado'
+  // ESTO SÍ LO PUEDEN HACER TODOS (Vendedores y Admin)
+  await _supabase
+      .from('cotizaciones')
+      .update({'estado': 'Aprobado'})
+      .eq('id', coti.id as Object);
 
-    // 2. Recorremos los productos vendidos para descontar el stock
+  // 2. EL CANDADO: Solo si es Admin, entramos a descontar el stock
+  if (esAdmin) {
+    // Recorremos los productos vendidos para descontar el stock
     for (var item in coti.productos) {
       final int productoId = item['id'];
       final int cantidadVendida = item['cantidad'];
@@ -354,7 +367,11 @@ class SupabaseService {
           .update({'stock': nuevoStock})
           .eq('id', productoId);
     }
+    print("Stock descontado exitosamente por el Administrador");
+  } else {
+    print("Cotización aprobada por vendedor. El stock se mantiene intacto.");
   }
+}
 
   // --- 2. FILTRAR VENTAS POR DÍA EXACTO ---
   Future<List<Cotizacion>> obtenerVentasPorDia(DateTime fecha, {int? usuarioId}) async {

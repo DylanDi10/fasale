@@ -5,10 +5,13 @@ import 'package:flutter/material.dart';
 import '../models/product_model.dart';
 import 'product_form_screen.dart';
 import 'dart:io';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProductsScreen extends StatefulWidget {
-  final bool modoSeleccion; // Agregas esto
-  const ProductsScreen({Key? key, this.modoSeleccion = false}) : super(key: key);
+  
+  final bool modoSeleccion;
+  final bool esAdmin;
+  const ProductsScreen({Key? key, this.modoSeleccion = false, this.esAdmin = false}) : super(key: key);
   @override
   _ProductsScreenState createState() => _ProductsScreenState();
 }
@@ -20,16 +23,33 @@ class _ProductsScreenState extends State<ProductsScreen> {
   String _queryBusqueda = '';
   String _marcaSeleccionada = 'Todas';
   String _modeloSeleccionado = 'Todos';
+  int? _categoriaSeleccionadaId;
+
   
   // Listas para los Dropdowns
   List<Map<String, dynamic>> _listaMarcas = [];
   List<String> _listaModelos = ['Todos'];
+  // Nueva lista para las categorías
+  List<Map<String, dynamic>> _listaCategorias = [];
+
+  // Función para descargar las categorías de la base de datos
+  Future<void> _cargarCategorias() async {
+    try {
+      final data = await Supabase.instance.client.from('categorias').select();
+      setState(() {
+        _listaCategorias = List<Map<String, dynamic>>.from(data);
+      });
+    } catch (e) {
+      debugPrint("Error cargando categorías: $e");
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _aplicarFiltrosYBusqueda();
     _cargarMarcasCatalogo();
+    _cargarCategorias();
   }
 
   void _cargarMarcasCatalogo() async {
@@ -63,6 +83,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         query: _queryBusqueda,
         marca: _marcaSeleccionada,
         modelo: _modeloSeleccionado,
+        categoriaId: _categoriaSeleccionadaId,
       );
     });
   }
@@ -158,6 +179,137 @@ class _ProductsScreenState extends State<ProductsScreen> {
       ),
     );
   }
+  void _abrirGestorCategorias() {
+    TextEditingController nuevaCategoriaController = TextEditingController();
+    // Asumimos que ya tienes la instancia de Supabase configurada en tu app
+    final supabase = Supabase.instance.client;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        // StatefulBuilder es LA CLAVE para que el Dialog se actualice en tiempo real
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text("Gestionar Categorías", style: TextStyle(fontWeight: FontWeight.bold)),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 1. Buscador para agregar nueva
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: nuevaCategoriaController,
+                            decoration: const InputDecoration(
+                              hintText: "Nombre de nueva categoría...",
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle, color: Colors.green, size: 30),
+                          onPressed: () async {
+                            final texto = nuevaCategoriaController.text.trim();
+                            if (texto.isEmpty) return;
+
+                            try {
+                              // INSERTAR EN SUPABASE
+                              // Asegúrate de que tu tabla se llame 'categorias' y la columna 'nombre'
+                              await supabase.from('categorias').insert({'nombre': texto});
+                              
+                              nuevaCategoriaController.clear();
+                              
+                              // Volvemos a cargar tu lista global de categorías
+                              await _cargarCategorias(); // <--- Llama a tu función que descarga las categorías
+                              
+                              // Actualizamos la pantalla del Dialog y la pantalla de fondo
+                              setStateDialog(() {});
+                              setState(() {});
+                              
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Categoría guardada con éxito", style: TextStyle(color: Colors.white)), backgroundColor: Colors.green),
+                              );
+                            } catch (e) {
+                              print("Error al guardar categoría: $e");
+                            }
+                          },
+                        )
+                      ],
+                    ),
+                    const Divider(height: 30),
+                    
+                    // 2. Lista de categorías actuales
+                    const Text("Categorías Actuales:", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      // Reemplaza 'listaCategorias' por el nombre de tu variable real (List<Map<String, dynamic>>)
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _listaCategorias.length, 
+                        itemBuilder: (context, index) {
+                          final categoria = _listaCategorias[index];
+                          
+                          return ListTile(
+                            dense: true,
+                            // Asegúrate de que 'nombre' sea la clave correcta en tu mapa
+                            title: Text(categoria['nombre'].toString()), 
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red, size: 22),
+                              onPressed: () async {
+                                // Confirmación de borrado
+                                bool confirmar = await showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text("¿Borrar categoría?"),
+                                    content: const Text("¿Estás seguro? Los productos con esta categoría podrían quedarse sin clasificación."),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancelar")),
+                                      TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Borrar", style: TextStyle(color: Colors.red))),
+                                    ],
+                                  ),
+                                ) ?? false;
+
+                                if (confirmar) {
+                                  try {
+                                    // BORRAR DE SUPABASE
+                                    await supabase
+                                        .from('categorias')
+                                        .delete()
+                                        .eq('id', categoria['id']); // Usa el ID para borrar el exacto
+                                    
+                                    // Recargar las listas
+                                    await _cargarCategorias();
+                                    
+                                    setStateDialog(() {});
+                                    setState(() {});
+                                  } catch (e) {
+                                    print("Error al borrar: $e");
+                                  }
+                                }
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("CERRAR", style: TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -180,81 +332,129 @@ class _ProductsScreenState extends State<ProductsScreen> {
         ),
         // --- BOTÓN DE IMPORTAR EXCEL (A la derecha) ---
         actions: [
-          IconButton(
-            icon: const Icon(Icons.upload_file, color: Colors.white),
-            tooltip: "Importar Excel",
-            onPressed: () => _mostrarOpcionesImportacion(), 
-          ),
+          // Solo si esAdmin es TRUE, mostramos estos botones
+          if (widget.esAdmin) ...[
+            // 1. Botón para Gestionar Categorías
+            IconButton(
+              icon: const Icon(Icons.category, color: Colors.white),
+              tooltip: "Gestionar Categorías",
+              onPressed: () => _abrirGestorCategorias(), 
+            ),
+            // 2. Botón de Importar Excel
+            IconButton(
+              icon: const Icon(Icons.upload_file, color: Colors.white),
+              tooltip: "Importar Excel",
+              onPressed: () => _mostrarOpcionesImportacion(),
+            ),
+          ],
         ],
       ),
       
       body: Column(
         children: [
           // --- FILTROS EN CASCADA ---
+          // --- FILTROS EN CASCADA ---
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
               children: [
-                // Dropdown MARCA
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Marca", style: TextStyle(fontSize: 12, color: Colors.grey[700])),
-                      DropdownButton<String>(
+                // NUEVA FILA: Dropdown CATEGORÍA
+                Row(
+                  children: [
+                    Text("Categoría:", style: TextStyle(fontSize: 12, color: Colors.grey[700], fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DropdownButton<int?>(
                         isExpanded: true,
-                        value: _marcaSeleccionada,
+                        value: _categoriaSeleccionadaId,
                         items: [
-                          DropdownMenuItem(value: 'Todas', child: Text('Todas')),
-                          ..._listaMarcas.map((marca) {
-                            return DropdownMenuItem<String>(
-                              value: marca['nombre'],
-                              child: Text(marca['nombre'], overflow: TextOverflow.ellipsis),
+                          const DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('Todas las categorías', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                          ..._listaCategorias.map((cat) {
+                            return DropdownMenuItem<int?>(
+                              value: cat['id'] as int,
+                              child: Text(cat['nombre'].toString(), overflow: TextOverflow.ellipsis),
                             );
                           }).toList(),
                         ],
-                        onChanged: (nuevaMarca) {
-                          if (nuevaMarca != null) {
-                            // Buscamos el ID de la marca para traer sus modelos
-                            int? id;
-                            if (nuevaMarca != 'Todas') {
-                              id = _listaMarcas.firstWhere((m) => m['nombre'] == nuevaMarca)['id'];
-                            }
-                            _alCambiarMarca(nuevaMarca, id);
-                          }
+                        onChanged: (nuevoId) {
+                          setState(() {
+                            _categoriaSeleccionadaId = nuevoId;
+                          });
+                          _aplicarFiltrosYBusqueda();
                         },
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                SizedBox(width: 16),
-                
-                // Dropdown MODELO (Dependiente de la Marca)
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Modelo", style: TextStyle(fontSize: 12, color: Colors.grey[700])),
-                      DropdownButton<String>(
-                        isExpanded: true,
-                        value: _listaModelos.contains(_modeloSeleccionado) ? _modeloSeleccionado : 'Todos',
-                        items: _listaModelos.map((String modelo) {
-                          return DropdownMenuItem<String>(
-                            value: modelo,
-                            child: Text(modelo, overflow: TextOverflow.ellipsis),
-                          );
-                        }).toList(),
-                        onChanged: _marcaSeleccionada == 'Todas' ? null : (nuevoModelo) {
-                          if (nuevoModelo != null) {
-                            setState(() {
-                              _modeloSeleccionado = nuevoModelo;
-                            });
-                            _aplicarFiltrosYBusqueda();
-                          }
-                        },
+                const SizedBox(height: 8), // Espacio entre las dos filas
+
+                // FILA ORIGINAL: MARCA Y MODELO
+                Row(
+                  children: [
+                    // Dropdown MARCA
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Marca", style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+                          DropdownButton<String>(
+                            isExpanded: true,
+                            value: _marcaSeleccionada,
+                            items: [
+                              const DropdownMenuItem(value: 'Todas', child: Text('Todas')),
+                              ..._listaMarcas.map((marca) {
+                                return DropdownMenuItem<String>(
+                                  value: marca['nombre'],
+                                  child: Text(marca['nombre'], overflow: TextOverflow.ellipsis),
+                                );
+                              }).toList(),
+                            ],
+                            onChanged: (nuevaMarca) {
+                              if (nuevaMarca != null) {
+                                int? id;
+                                if (nuevaMarca != 'Todas') {
+                                  id = _listaMarcas.firstWhere((m) => m['nombre'] == nuevaMarca)['id'];
+                                }
+                                _alCambiarMarca(nuevaMarca, id);
+                              }
+                            },
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 16),
+                    
+                    // Dropdown MODELO
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Modelo", style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+                          DropdownButton<String>(
+                            isExpanded: true,
+                            value: _listaModelos.contains(_modeloSeleccionado) ? _modeloSeleccionado : 'Todos',
+                            items: _listaModelos.map((String modelo) {
+                              return DropdownMenuItem<String>(
+                                value: modelo,
+                                child: Text(modelo, overflow: TextOverflow.ellipsis),
+                              );
+                            }).toList(),
+                            onChanged: _marcaSeleccionada == 'Todas' ? null : (nuevoModelo) {
+                              if (nuevoModelo != null) {
+                                setState(() {
+                                  _modeloSeleccionado = nuevoModelo;
+                                });
+                                _aplicarFiltrosYBusqueda();
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -298,27 +498,36 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text("Precio: S/ ${producto.precio}", style: TextStyle(fontWeight: FontWeight.w500)),
+                            Text("Precio: USD ${producto.precio}", style: TextStyle(fontWeight: FontWeight.w500)),
                             if (producto.marca != null || producto.modelo != null)
                               Text("${producto.marca ?? ''} ${producto.modelo ?? ''}", style: TextStyle(fontSize: 12, color: Colors.grey[600])),
                             SizedBox(height: 4),
                             Text("Stock: ${producto.stock}", style: TextStyle(color: producto.stock == 0 ? Colors.red : Colors.grey)),
                           ],
                         ),
-                        trailing: IconButton(
-                          icon: Icon(Icons.delete, color: Colors.red),
-                          onPressed: () async {
-                            await SupabaseService.instance.eliminarProducto(producto.id!);
-                            _aplicarFiltrosYBusqueda(); 
-                          },
-                        ),
+                        trailing: widget.esAdmin 
+                          ? IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () async {
+                                await SupabaseService.instance.eliminarProducto(producto.id!);
+                                _aplicarFiltrosYBusqueda(); 
+                              },
+                            )
+                          : null,
                         onTap: () async {
                           if (widget.modoSeleccion) {
-                            // Si estamos cotizando, devolvemos el producto a la pantalla anterior
                             Navigator.pop(context, producto); 
                           } else {
-                            // Si estamos administrando, abrimos el formulario para editar
-                            await Navigator.push(context, MaterialPageRoute(builder: (context) => ProductFormScreen(producto: producto)));
+                            // Abrimos el formulario, pero le pasamos el "pase VIP"
+                            await Navigator.push(
+                              context, 
+                              MaterialPageRoute(
+                                builder: (context) => ProductFormScreen(
+                                  producto: producto,
+                                  esAdmin: widget.esAdmin, 
+                                )
+                              )
+                            );
                             _aplicarFiltrosYBusqueda(); 
                           }
                         },
@@ -331,13 +540,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        child: Icon(Icons.add),
+      floatingActionButton: widget.esAdmin
+    ? FloatingActionButton(
+        child: const Icon(Icons.add),
         onPressed: () async {
           await Navigator.push(context, MaterialPageRoute(builder: (context) => ProductFormScreen()));
           _aplicarFiltrosYBusqueda();
         },
-      ),
+      )
+    : null,
     );
   }
 }

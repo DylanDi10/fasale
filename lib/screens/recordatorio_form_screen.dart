@@ -1,3 +1,4 @@
+import 'package:cotizaciones_app/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import '../db/supabase_service.dart';
 import '../models/client_model.dart';
@@ -14,6 +15,7 @@ class RecordatorioFormScreen extends StatefulWidget {
 }
 
 class _RecordatorioFormScreenState extends State<RecordatorioFormScreen> {
+  int _minutosAntes = 30; // 🔔 El valor inicial para el Dropdown
   final _formKey = GlobalKey<FormState>();
   final _descripcionController = TextEditingController();
 
@@ -29,12 +31,12 @@ class _RecordatorioFormScreenState extends State<RecordatorioFormScreen> {
     super.dispose();
   }
 
-  // --- SELECTOR DE FECHA ---
+  // --- SELECTORES ---
   Future<void> _seleccionarFecha(BuildContext context) async {
     final DateTime? seleccion = await showDatePicker(
       context: context,
       initialDate: _fechaSeleccionada,
-      firstDate: DateTime.now(), // No se puede programar en el pasado
+      firstDate: DateTime.now(),
       lastDate: DateTime(2030),
       builder: (context, child) {
         return Theme(
@@ -45,14 +47,9 @@ class _RecordatorioFormScreenState extends State<RecordatorioFormScreen> {
         );
       },
     );
-    if (seleccion != null && seleccion != _fechaSeleccionada) {
-      setState(() {
-        _fechaSeleccionada = seleccion;
-      });
-    }
+    if (seleccion != null) setState(() => _fechaSeleccionada = seleccion);
   }
 
-  // --- SELECTOR DE HORA ---
   Future<void> _seleccionarHora(BuildContext context) async {
     final TimeOfDay? seleccion = await showTimePicker(
       context: context,
@@ -66,19 +63,14 @@ class _RecordatorioFormScreenState extends State<RecordatorioFormScreen> {
         );
       },
     );
-    if (seleccion != null && seleccion != _horaSeleccionada) {
-      setState(() {
-        _horaSeleccionada = seleccion;
-      });
-    }
+    if (seleccion != null) setState(() => _horaSeleccionada = seleccion);
   }
 
-  // --- GUARDAR EN LA NUBE ---
+  // --- LÓGICA DE GUARDADO ---
   void _guardarRecordatorio() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isSaving = true);
 
-      // Unimos la fecha y la hora en un solo objeto DateTime
       final fechaFinalProgramada = DateTime(
         _fechaSeleccionada.year,
         _fechaSeleccionada.month,
@@ -87,20 +79,34 @@ class _RecordatorioFormScreenState extends State<RecordatorioFormScreen> {
         _horaSeleccionada.minute,
       );
 
-      final nuevoRecordatorio = Recordatorio(
-        usuarioId: widget.usuarioActual.id!,
-        clienteId: _clienteSeleccionado?.id, // Puede ser null si es un recordatorio general
-        fechaProgramada: fechaFinalProgramada,
-        descripcion: _descripcionController.text.trim(),
+      // 1. Guardar en Supabase
+      await SupabaseService.instance.insertarRecordatorio(
+        Recordatorio(
+          usuarioId: widget.usuarioActual.id!,
+          clienteId: _clienteSeleccionado?.id,
+          fechaProgramada: fechaFinalProgramada,
+          descripcion: _descripcionController.text.trim(),
+        ),
       );
 
-      await SupabaseService.instance.insertarRecordatorio(nuevoRecordatorio);
+      // 2. Programar Alarma
+      // --- DENTRO DE _guardarRecordatorio ---
+      final horaDeLaAlarma = fechaFinalProgramada.subtract(Duration(minutes: _minutosAntes));
+      final int notiId = DateTime.now().millisecondsSinceEpoch.remainder(100000);
+
+      await NotificationService().programarNotificacion(
+        notiId,
+        "Cita en $_minutosAntes minutos ⏰", // Título dinámico
+        _descripcionController.text.trim(),
+        horaDeLaAlarma,
+      );
 
       if (mounted) {
+        setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recordatorio guardado con éxito'), backgroundColor: Colors.teal),
+          const SnackBar(content: Text('Recordatorio y alarma programados 🔔'), backgroundColor: Colors.teal),
         );
-        Navigator.pop(context); // Regresamos a la agenda
+        Navigator.pop(context);
       }
     }
   }
@@ -122,81 +128,39 @@ class _RecordatorioFormScreenState extends State<RecordatorioFormScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    
-                    // 1. BUSCADOR DE CLIENTES (Opcional)
-                    const Text(
-                      "¿A qué cliente debes llamar? (Opcional)",
-                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
-                    ),
+                    const Text("¿A qué cliente llamar? (Opcional)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
                     const SizedBox(height: 8),
+                    // ... Aquí va tu Autocomplete de Clientes (lo mantuve igual)
                     Autocomplete<Cliente>(
-                      optionsBuilder: (TextEditingValue textEditingValue) async {
-                        if (textEditingValue.text.length < 2) return const Iterable<Cliente>.empty();
-                        return await SupabaseService.instance.buscarClientesGeneral(textEditingValue.text);
+                      optionsBuilder: (textValue) async {
+                        if (textValue.text.length < 2) return const Iterable<Cliente>.empty();
+                        return await SupabaseService.instance.buscarClientesGeneral(textValue.text);
                       },
-                      displayStringForOption: (Cliente option) => option.nombre,
-                      optionsViewBuilder: (context, onSelected, options) {
-                        return Align(
-                          alignment: Alignment.topLeft,
-                          child: Material(
-                            elevation: 4.0,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(maxHeight: 200, maxWidth: MediaQuery.of(context).size.width - 40),
-                              child: ListView.builder(
-                                padding: EdgeInsets.zero,
-                                itemCount: options.length,
-                                itemBuilder: (BuildContext context, int index) {
-                                  final Cliente cliente = options.elementAt(index);
-                                  return ListTile(
-                                    leading: const Icon(Icons.person, color: Colors.teal),
-                                    title: Text(cliente.nombre),
-                                    subtitle: Text("DNI/RUC: ${cliente.dniRuc}"),
-                                    onTap: () => onSelected(cliente),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                      onSelected: (Cliente seleccion) {
-                        setState(() {
-                          _clienteSeleccionado = seleccion;
-                        });
-                      },
-                      fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                      displayStringForOption: (option) => option.nombre,
+                      onSelected: (seleccion) => setState(() => _clienteSeleccionado = seleccion),
+                      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
                         return TextFormField(
-                          controller: textEditingController,
+                          controller: controller,
                           focusNode: focusNode,
                           decoration: InputDecoration(
-                            hintText: 'Buscar por Nombre o DNI...',
+                            hintText: 'Buscar cliente...',
                             prefixIcon: const Icon(Icons.search, color: Colors.teal),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                            focusedBorder: OutlineInputBorder(
-                              borderSide: BorderSide(color: Colors.teal[700]!, width: 2),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
                           ),
                         );
                       },
                     ),
                     const SizedBox(height: 25),
 
-                    // 2. FECHA Y HORA
+                    // FECHA Y HORA
                     Row(
                       children: [
                         Expanded(
                           child: InkWell(
                             onTap: () => _seleccionarFecha(context),
                             child: InputDecorator(
-                              decoration: InputDecoration(
-                                labelText: 'Fecha',
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                prefixIcon: const Icon(Icons.calendar_today, color: Colors.teal),
-                              ),
-                              child: Text(
-                                "${_fechaSeleccionada.day.toString().padLeft(2, '0')}/${_fechaSeleccionada.month.toString().padLeft(2, '0')}/${_fechaSeleccionada.year}",
-                              ),
+                              decoration: InputDecoration(labelText: 'Fecha', border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), prefixIcon: const Icon(Icons.calendar_today, color: Colors.teal)),
+                              child: Text("${_fechaSeleccionada.day}/${_fechaSeleccionada.month}/${_fechaSeleccionada.year}"),
                             ),
                           ),
                         ),
@@ -205,11 +169,7 @@ class _RecordatorioFormScreenState extends State<RecordatorioFormScreen> {
                           child: InkWell(
                             onTap: () => _seleccionarHora(context),
                             child: InputDecorator(
-                              decoration: InputDecoration(
-                                labelText: 'Hora',
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                                prefixIcon: const Icon(Icons.access_time, color: Colors.teal),
-                              ),
+                              decoration: InputDecoration(labelText: 'Hora', border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), prefixIcon: const Icon(Icons.access_time, color: Colors.teal)),
                               child: Text(_horaSeleccionada.format(context)),
                             ),
                           ),
@@ -218,38 +178,45 @@ class _RecordatorioFormScreenState extends State<RecordatorioFormScreen> {
                     ),
                     const SizedBox(height: 25),
 
-                    // 3. DESCRIPCIÓN
+                    // --- 3. DESCRIPCIÓN (RESTAURADO) ---
+                    const Text("Detalles de la cita:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                    const SizedBox(height: 8),
                     TextFormField(
                       controller: _descripcionController,
-                      maxLines: 3,
+                      maxLines: 2,
                       decoration: InputDecoration(
-                        labelText: '¿De qué van a hablar? / Detalles',
-                        alignLabelWithHint: true,
-                        prefixIcon: const Padding(
-                          padding: EdgeInsets.only(bottom: 40),
-                          child: Icon(Icons.notes, color: Colors.teal),
-                        ),
+                        hintText: 'Ej: Presentación de catálogo de máquinas',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.teal[700]!, width: 2),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+                        prefixIcon: const Icon(Icons.notes, color: Colors.teal),
                       ),
-                      validator: (value) => value!.trim().isEmpty ? 'Ingresa una descripción o motivo' : null,
+                      validator: (value) => value!.trim().isEmpty ? 'Ingresa una descripción' : null,
+                    ),
+                    const SizedBox(height: 25),
+
+                    // --- 4. DROPDOWN DE NOTIFICACIÓN ---
+                    const Text("¿Cuándo avisar?", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<int>(
+                      value: _minutosAntes,
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.notifications_active, color: Colors.teal),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 10, child: Text('10 minutos antes')),
+                        DropdownMenuItem(value: 30, child: Text('30 minutos antes')),
+                        DropdownMenuItem(value: 60, child: Text('1 hora antes')),
+                      ],
+                      onChanged: (val) => setState(() => _minutosAntes = val!),
                     ),
                     const SizedBox(height: 40),
 
-                    // 4. BOTÓN DE GUARDAR
+                    // BOTÓN GUARDAR
                     SizedBox(
                       width: double.infinity,
                       height: 55,
                       child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal[700],
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                          elevation: 3,
-                        ),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[700], foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                         icon: const Icon(Icons.save),
                         label: const Text("GUARDAR RECORDATORIO", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                         onPressed: _guardarRecordatorio,

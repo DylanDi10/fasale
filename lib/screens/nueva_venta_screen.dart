@@ -185,7 +185,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                     // Reutilizamos tu lógica, pero metiendo la cantidad exacta
                     _agregarVariasUnidadesAlCarrito(producto, cantidadElegida);
                   },
-                  child: Text("AGREGAR S/ ${(producto.precio * cantidadElegida).toStringAsFixed(2)}"),
+                  child: Text("AGREGAR USD ${(producto.precio * cantidadElegida).toStringAsFixed(2)}"),
                 )
               ],
             );
@@ -503,7 +503,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                subtitle: Text("S/ ${p.precio} c/u"),
+                                subtitle: Text("USD ${p.precio} c/u"),
                                 trailing: Container(
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(12),
@@ -610,7 +610,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                             ),
                           ),
                           Text(
-                            "S/ ${_total.toStringAsFixed(2)}",
+                            "USD ${_total.toStringAsFixed(2)}",
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 28,

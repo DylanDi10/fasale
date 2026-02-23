@@ -42,10 +42,19 @@ class _LoginScreenState extends State<LoginScreen> {
       await prefs.setInt('usuario_id', usuarioEncontrado.id!);
       await prefs.setString('nombre_vendedor', usuarioEncontrado.username);
 
+      // --- 🔒 LA MAGIA DE LA SEGURIDAD AQUÍ ---
+      // Comparamos el nombre de usuario. Si escribe "admin", le damos el poder.
+      // (Si en tu modelo de BD tienes un campo de rol, sería: usuarioEncontrado.rol == 'admin')
+      bool permisoAdmin = (usuarioEncontrado.username.toLowerCase() == 'admin'); 
+      
+      // Guardamos el permiso en caché por si cierra y abre la app
+      await prefs.setBool('esAdmin', permisoAdmin);
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => HomeScreen(usuario: usuarioEncontrado),
+          // Le pasamos el pase VIP a tu HomeScreen
+          builder: (context) => HomeScreen(usuario: usuarioEncontrado, esAdmin: permisoAdmin), 
         ),
       );
     } else {
@@ -66,7 +75,31 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.bolt, size: 100, color: Colors.indigo),
+                
+                Container(
+                  // Le damos un pequeño borde o sombra para que resalte (opcional)
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20), // El mismo radio que el ClipRRect
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.indigo.withOpacity(0.2),
+                        blurRadius: 10,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    // Aquí defines qué tan redondos quieres los bordes. 
+                    // Un valor de 20 suele verse moderno y elegante.
+                    borderRadius: BorderRadius.circular(20.0),
+                    child: Image.asset(
+                      'assets/images/launcher_icon.png', // <--- ¡VERIFICA QUE ESTA RUTA SEA CORRECTA!
+                      width: 120,        // Un poco más grande que el ícono anterior (era 100)
+                      height: 120,
+                      fit: BoxFit.cover, // Esto hace que la imagen llene el cuadro sin deformarse
+                    ),
+                  ),
+                ),
                 SizedBox(height: 20),
                 Text("FA SALE", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
                 SizedBox(height: 40),
