@@ -41,12 +41,19 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
 
   void _cargarDatos() async {
     bool esAdmin = widget.usuarioActual.rol == 'admin';
+    
+    // --- LAS PAUSAS ASÍNCRONAS ---
     final clientes = await SupabaseService.instance.obtenerClientes(
       verTodo: esAdmin,
       usuarioIdEspecifico: esAdmin ? null : widget.cotizacionAEditar?.usuarioId,
     );
     final productos = await SupabaseService.instance.obtenerProductos();
 
+    // --- 🛡️ EL ESCUDO ---
+    // Si el vendedor cerró la pantalla mientras cargaban los datos, abortamos.
+    if (!mounted) return;
+
+    // --- ZONA SEGURA ---
     setState(() {
       _listaClientes = clientes;
       _listaProductos = productos;
@@ -55,6 +62,7 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
     if (widget.cotizacionAEditar != null) {
       _prepararEdicion(clientes, productos);
     }
+    
     setState(() => _estaCargando = false);
   }
 

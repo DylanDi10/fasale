@@ -10,10 +10,9 @@ class Producto {
   final String? marca;
   final String? modelo;
   final String? submodelo;
-  // --- CAMPOS MULTIMEDIA ---
   final String? linkPdf;
   final String? linkVideo;
-  final String? linkFotos; // <-- NUEVO
+  final String? linkFotos;
 
   Producto({
     this.id,
@@ -52,20 +51,23 @@ class Producto {
 
   factory Producto.fromMap(Map<String, dynamic> map) {
     return Producto(
-      id: map['id'],
-      nombre: map['nombre'],
-      descripcion: map['descripcion'] ?? '',
-      precio: (map['precio'] as num).toDouble(),
-      stock: map['stock'] as int,
-      urlImagen: map['url_imagen'],
-      categoriaId: map['categoria_id'], 
-      nombreCategoria: map['nombre_categoria'],
-      marca: map['marca'],
-      modelo: map['modelo'],
-      submodelo: map['submodelo'],
-      linkPdf: map['link_pdf'],
-      linkVideo: map['link_video'],
-      linkFotos: map['link_fotos'],
+      id: map['id'] as int?,
+      // Si el nombre no viene, ponemos un texto de advertencia en lugar de crashear
+      nombre: map['nombre'] ?? 'Producto sin nombre',
+      descripcion: map['descripcion'] ?? 'Sin descripción',
+      // SEGURIDAD EN NÚMEROS: Convertimos a num primero y si es nulo, 0.0
+      precio: (map['precio'] as num?)?.toDouble() ?? 0.0,
+      stock: (map['stock'] as int?) ?? 0,
+      urlImagen: map['url_imagen'] as String?,
+      // Si falta la categoría, ponemos 0 (o un ID que sepas que no existe)
+      categoriaId: (map['categoria_id'] as int?) ?? 0, 
+      nombreCategoria: map['nombre_categoria'] as String?,
+      marca: map['marca'] as String? ?? 'Sin marca',
+      modelo: map['modelo'] as String? ?? 'Sin modelo',
+      submodelo: map['submodelo'] as String?,
+      linkPdf: map['link_pdf'] as String?,
+      linkVideo: map['link_video'] as String?,
+      linkFotos: map['link_fotos'] as String?,
     );
   }
 }

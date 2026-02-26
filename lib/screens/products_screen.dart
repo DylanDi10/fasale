@@ -8,7 +8,6 @@ import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProductsScreen extends StatefulWidget {
-  
   final bool modoSeleccion;
   final bool esAdmin;
   const ProductsScreen({Key? key, this.modoSeleccion = false, this.esAdmin = false}) : super(key: key);
@@ -25,17 +24,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
   String _modeloSeleccionado = 'Todos';
   int? _categoriaSeleccionadaId;
 
-  
-  // Listas para los Dropdowns
-  List<Map<String, dynamic>> _listaMarcas = [];
+  // NUEVAS VARIABLES: Listas dinámicas de texto simple
+  Map<String, List<String>> _filtrosDisponibles = {};
+  List<String> _listaMarcas = ['Todas'];
   List<String> _listaModelos = ['Todos'];
-  // Nueva lista para las categorías
   List<Map<String, dynamic>> _listaCategorias = [];
 
   // Función para descargar las categorías de la base de datos
   Future<void> _cargarCategorias() async {
     try {
       final data = await Supabase.instance.client.from('categorias').select();
+      if (!mounted) return;
       setState(() {
         _listaCategorias = List<Map<String, dynamic>>.from(data);
       });
@@ -48,32 +47,32 @@ class _ProductsScreenState extends State<ProductsScreen> {
   void initState() {
     super.initState();
     _aplicarFiltrosYBusqueda();
-    _cargarMarcasCatalogo();
     _cargarCategorias();
+    _cargarFiltrosDinamicos(); // Llamamos al nuevo motor
   }
 
-  void _cargarMarcasCatalogo() async {
-    final marcas = await SupabaseService.instance.obtenerMarcasCatalogo();
+  // NUEVA FUNCIÓN: Trae todas las marcas y modelos de golpe
+  void _cargarFiltrosDinamicos() async {
+    final filtros = await SupabaseService.instance.obtenerFiltrosDinamicos();
+    if (!mounted) return;
     setState(() {
-      _listaMarcas = marcas;
+      _filtrosDisponibles = filtros;
+      _listaMarcas = ['Todas', ...filtros.keys];
     });
   }
 
-  void _alCambiarMarca(String nuevaMarca, int? marcaId) async {
+  // NUEVA FUNCIÓN: Cambia la marca y actualiza los modelos al instante sin internet
+  void _alCambiarMarca(String nuevaMarca) {
     setState(() {
       _marcaSeleccionada = nuevaMarca;
-      _modeloSeleccionado = 'Todos'; // Resetea el modelo
-      _listaModelos = ['Todos'];     // Limpia la lista anterior
+      _modeloSeleccionado = 'Todos'; 
+      
+      if (nuevaMarca == 'Todas') {
+        _listaModelos = ['Todos'];
+      } else {
+        _listaModelos = ['Todos', ...(_filtrosDisponibles[nuevaMarca] ?? [])];
+      }
     });
-
-    // Si selecciona una marca real, trae sus modelos de la base de datos
-    if (marcaId != null) {
-      final modelos = await SupabaseService.instance.obtenerModelosPorMarca(marcaId);
-      setState(() {
-        _listaModelos = ['Todos', ...modelos];
-      });
-    }
-    
     _aplicarFiltrosYBusqueda();
   }
 
@@ -87,6 +86,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       );
     });
   }
+
   // Ahora recibe un parámetro bool para saber si debe borrar primero
   Future<void> _leerExcelYSubir({required bool limpiarBase}) async {
     try {
@@ -96,10 +96,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
       );
 
       if (result != null && result.files.single.path != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Procesando Excel... Espere por favor."), 
+            duration: Duration(seconds: 3),
+            backgroundColor: Colors.indigo,
+          ),
+        );
+
         var bytes = File(result.files.single.path!).readAsBytesSync();
         var excel = Excel.decodeBytes(bytes);
 
         List<Producto> listaParaSubir = [];
+
+        final resCategorias = await Supabase.instance.client.from('categorias').select();
+        
+        Map<String, int> mapaCategorias = {};
+        for (var cat in resCategorias) {
+          mapaCategorias[cat['nombre'].toString().trim().toLowerCase()] = cat['id'] as int;
+        }
 
         for (var table in excel.tables.keys) {
           var sheet = excel.tables[table];
@@ -108,45 +123,80 @@ class _ProductsScreenState extends State<ProductsScreen> {
           for (var i = 1; i < sheet.maxRows; i++) {
             var row = sheet.rows[i];
             
+            // --- 🛡️ FUNCIÓN SALVAVIDAS ---
+            // Si el Excel tiene celdas vacías al final, la fila se "acorta". Esto evita el crasheo.
+            String? celda(int index) {
+              if (index >= row.length) return null;
+              final valor = row[index]?.value?.toString().trim();
+              return (valor == null || valor.isEmpty) ? null : valor;
+            }
+
+            // Si no hay nombre, saltamos la fila
+            if (celda(0) == null) continue; 
+
+            // --- 🔍 TRADUCCIÓN DE CATEGORÍA ---
+            String nombreCategoriaExcel = celda(5) ?? "Sin Categoría";
+            String categoriaKey = nombreCategoriaExcel.toLowerCase();
+            int categoriaIdFinal;
+
+            if (mapaCategorias.containsKey(categoriaKey)) {
+              categoriaIdFinal = mapaCategorias[categoriaKey]!;
+            } else {
+              final nuevaCat = await Supabase.instance.client
+                  .from('categorias')
+                  .insert({'nombre': nombreCategoriaExcel})
+                  .select()
+                  .single(); 
+              
+              categoriaIdFinal = nuevaCat['id'] as int;
+              mapaCategorias[categoriaKey] = categoriaIdFinal; 
+            }
+
+            // Armamos el producto leyendo de forma 100% segura
             listaParaSubir.add(Producto(
-              nombre: row[0]?.value.toString() ?? "Sin nombre",
-              descripcion: row[1]?.value.toString() ?? "",
-              precio: double.tryParse(row[2]?.value.toString() ?? "0.0") ?? 0.0,
-              stock: int.tryParse(row[3]?.value.toString() ?? "0") ?? 0,
-              urlImagen: row[4]?.value.toString(),
-              categoriaId: int.tryParse(row[5]?.value.toString() ?? "1") ?? 1,
-              marca: row[6]?.value.toString(),
-              modelo: row[7]?.value.toString(),
-              submodelo: row[8]?.value.toString(),
-              linkPdf: row[9]?.value.toString(),
-              linkVideo: row[10]?.value.toString(),
-              linkFotos: row[11]?.value.toString(),
+              nombre: celda(0) ?? "Sin nombre",
+              descripcion: celda(1) ?? "",
+              precio: double.tryParse(celda(2) ?? "0") ?? 0.0,
+              stock: int.tryParse(celda(3) ?? "0") ?? 0,
+              urlImagen: celda(4),
+              categoriaId: categoriaIdFinal, 
+              marca: celda(6),
+              modelo: celda(7),
+              submodelo: celda(8),
+              linkPdf: celda(9),
+              linkVideo: celda(10),
+              linkFotos: celda(11),
             ));
           }
         }
 
         if (listaParaSubir.isNotEmpty) {
-          // --- AQUÍ ESTÁ LA MAGIA DEL BORRADO ---
           if (limpiarBase) {
             await SupabaseService.instance.eliminarTodosLosProductos();
           }
 
-          // Subimos los nuevos
           await SupabaseService.instance.importarProductosMasivos(listaParaSubir);
           
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("${listaParaSubir.length} productos cargados")),
+            SnackBar(content: Text("${listaParaSubir.length} productos cargados con éxito"), backgroundColor: Colors.green),
           );
-          _aplicarFiltrosYBusqueda(); // Refresca la pantalla
+          
+          await _cargarCategorias(); 
+          _cargarFiltrosDinamicos();
+          _aplicarFiltrosYBusqueda(); 
         }
       }
     } catch (e) {
       debugPrint("Error importando Excel: $e");
+      if (!mounted) return;
+      // AHORA MOSTRARÁ EL ERROR REAL DE LA BASE DE DATOS PARA SABER QUÉ PASA
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Error: El formato del Excel no es correcto")),
+        SnackBar(content: Text("Error real: $e"), backgroundColor: Colors.red, duration: const Duration(seconds: 8)),
       );
     }
   }
+
   void _mostrarOpcionesImportacion() {
     showDialog(
       context: context,
@@ -163,14 +213,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              _leerExcelYSubir(limpiarBase: true); // TRUE = Reemplaza todo
+              _leerExcelYSubir(limpiarBase: true); 
             },
             child: const Text("REEMPLAZAR TODO", style: TextStyle(color: Colors.red)),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              _leerExcelYSubir(limpiarBase: false); // FALSE = Solo añade
+              _leerExcelYSubir(limpiarBase: false); 
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo),
             child: const Text("SOLO AÑADIR"),
@@ -179,15 +229,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
       ),
     );
   }
+
   void _abrirGestorCategorias() {
     TextEditingController nuevaCategoriaController = TextEditingController();
-    // Asumimos que ya tienes la instancia de Supabase configurada en tu app
     final supabase = Supabase.instance.client;
 
     showDialog(
       context: context,
       builder: (context) {
-        // StatefulBuilder es LA CLAVE para que el Dialog se actualice en tiempo real
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             return AlertDialog(
@@ -197,7 +246,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 1. Buscador para agregar nueva
                     Row(
                       children: [
                         Expanded(
@@ -216,16 +264,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             if (texto.isEmpty) return;
 
                             try {
-                              // INSERTAR EN SUPABASE
-                              // Asegúrate de que tu tabla se llame 'categorias' y la columna 'nombre'
                               await supabase.from('categorias').insert({'nombre': texto});
-                              
                               nuevaCategoriaController.clear();
+                              await _cargarCategorias(); 
                               
-                              // Volvemos a cargar tu lista global de categorías
-                              await _cargarCategorias(); // <--- Llama a tu función que descarga las categorías
-                              
-                              // Actualizamos la pantalla del Dialog y la pantalla de fondo
+                              if (!mounted) return;
                               setStateDialog(() {});
                               setState(() {});
                               
@@ -240,12 +283,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       ],
                     ),
                     const Divider(height: 30),
-                    
-                    // 2. Lista de categorías actuales
                     const Text("Categorías Actuales:", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     Expanded(
-                      // Reemplaza 'listaCategorias' por el nombre de tu variable real (List<Map<String, dynamic>>)
                       child: ListView.builder(
                         shrinkWrap: true,
                         itemCount: _listaCategorias.length, 
@@ -254,12 +294,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           
                           return ListTile(
                             dense: true,
-                            // Asegúrate de que 'nombre' sea la clave correcta en tu mapa
                             title: Text(categoria['nombre'].toString()), 
                             trailing: IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red, size: 22),
                               onPressed: () async {
-                                // Confirmación de borrado
                                 bool confirmar = await showDialog(
                                   context: context,
                                   builder: (context) => AlertDialog(
@@ -274,19 +312,29 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
                                 if (confirmar) {
                                   try {
-                                    // BORRAR DE SUPABASE
                                     await supabase
                                         .from('categorias')
                                         .delete()
-                                        .eq('id', categoria['id']); // Usa el ID para borrar el exacto
+                                        .eq('id', categoria['id']);
                                     
-                                    // Recargar las listas
                                     await _cargarCategorias();
                                     
+                                    if (!mounted) return;
                                     setStateDialog(() {});
                                     setState(() {});
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text("Categoría eliminada"), backgroundColor: Colors.green),
+                                    );
                                   } catch (e) {
-                                    print("Error al borrar: $e");
+                                    if (!mounted) return;
+                                    String mensaje = "Error al borrar";
+                                    if (e.toString().contains('23503')) {
+                                      mensaje = "No puedes borrarla, tiene productos asociados";
+                                    }
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(mensaje), backgroundColor: Colors.red[800]),
+                                    );
                                   }
                                 }
                               },
@@ -310,13 +358,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
       },
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
     appBar: AppBar(
         backgroundColor: Colors.indigo[900],
         iconTheme: IconThemeData(color: Colors.white),
-        // --- BUSCADOR EN EL APPBAR ---
         title: TextField(
           style: TextStyle(color: Colors.white),
           decoration: InputDecoration(
@@ -327,20 +375,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ),
           onChanged: (value) {
             _queryBusqueda = value;
-            _aplicarFiltrosYBusqueda(); // Busca en tiempo real al escribir
+            _aplicarFiltrosYBusqueda(); 
           },
         ),
-        // --- BOTÓN DE IMPORTAR EXCEL (A la derecha) ---
         actions: [
-          // Solo si esAdmin es TRUE, mostramos estos botones
           if (widget.esAdmin) ...[
-            // 1. Botón para Gestionar Categorías
             IconButton(
               icon: const Icon(Icons.category, color: Colors.white),
               tooltip: "Gestionar Categorías",
               onPressed: () => _abrirGestorCategorias(), 
             ),
-            // 2. Botón de Importar Excel
             IconButton(
               icon: const Icon(Icons.upload_file, color: Colors.white),
               tooltip: "Importar Excel",
@@ -352,13 +396,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
       
       body: Column(
         children: [
-          // --- FILTROS EN CASCADA ---
-          // --- FILTROS EN CASCADA ---
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Column(
               children: [
-                // NUEVA FILA: Dropdown CATEGORÍA
                 Row(
                   children: [
                     Text("Categoría:", style: TextStyle(fontSize: 12, color: Colors.grey[700], fontWeight: FontWeight.bold)),
@@ -389,9 +430,8 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8), // Espacio entre las dos filas
+                const SizedBox(height: 8),
 
-                // FILA ORIGINAL: MARCA Y MODELO
                 Row(
                   children: [
                     // Dropdown MARCA
@@ -403,22 +443,15 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           DropdownButton<String>(
                             isExpanded: true,
                             value: _marcaSeleccionada,
-                            items: [
-                              const DropdownMenuItem(value: 'Todas', child: Text('Todas')),
-                              ..._listaMarcas.map((marca) {
-                                return DropdownMenuItem<String>(
-                                  value: marca['nombre'],
-                                  child: Text(marca['nombre'], overflow: TextOverflow.ellipsis),
-                                );
-                              }).toList(),
-                            ],
+                            items: _listaMarcas.map((String marca) {
+                              return DropdownMenuItem<String>(
+                                value: marca,
+                                child: Text(marca, overflow: TextOverflow.ellipsis),
+                              );
+                            }).toList(),
                             onChanged: (nuevaMarca) {
                               if (nuevaMarca != null) {
-                                int? id;
-                                if (nuevaMarca != 'Todas') {
-                                  id = _listaMarcas.firstWhere((m) => m['nombre'] == nuevaMarca)['id'];
-                                }
-                                _alCambiarMarca(nuevaMarca, id);
+                                _alCambiarMarca(nuevaMarca); // <-- Magia aplicada
                               }
                             },
                           ),
@@ -460,7 +493,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
             ),
           ),
 
-          // --- LISTA DE INVENTARIO ---
+          // LISTA DE INVENTARIO
           Expanded(
             child: FutureBuilder<List<Producto>>(
               future: _listaProductos,
@@ -518,7 +551,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           if (widget.modoSeleccion) {
                             Navigator.pop(context, producto); 
                           } else {
-                            // Abrimos el formulario, pero le pasamos el "pase VIP"
                             await Navigator.push(
                               context, 
                               MaterialPageRoute(

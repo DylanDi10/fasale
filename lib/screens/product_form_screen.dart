@@ -8,7 +8,6 @@ class ProductFormScreen extends StatefulWidget {
   final Producto? producto;
   final bool esAdmin;
   
-
   const ProductFormScreen({Key? key, this.producto, this.esAdmin = true,}) : super(key: key);
 
   @override
@@ -35,9 +34,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   int? _categoriaIdSeleccionada; 
   List<Categoria> _listaCategorias = [];
   
-  // --- NUEVO: VARIABLES PARA LA MARCA ---
+  // --- NUEVO: VARIABLES PARA LA MARCA (Simplificadas a Texto) ---
   String? _marcaSeleccionada;
-  List<Map<String, dynamic>> _listaMarcas = [];
+  List<String> _listaMarcas = []; // Ahora es una lista de textos simples
 
   bool _isLoading = true;
 
@@ -63,24 +62,29 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       _marcaSeleccionada = widget.producto!.marca; // Asignamos la marca que ya tenía
     }
 
-    _cargarDatos(); // Cargamos categorías y marcas al mismo tiempo
+    _cargarDatos(); // Cargamos categorías y el nuevo motor de marcas
   }
 
-  // --- NUEVA FUNCIÓN PARA CARGAR TODO ---
+  // --- NUEVA FUNCIÓN PARA CARGAR TODO CON EL MOTOR INTELIGENTE ---
   void _cargarDatos() async {
+    // --- LAS PAUSAS ASÍNCRONAS ---
     final categorias = await SupabaseService.instance.obtenerCategorias();
-    final marcas = await SupabaseService.instance.obtenerMarcasCatalogo();
+    final filtros = await SupabaseService.instance.obtenerFiltrosDinamicos(); // Llamamos a la vista
     
+    // --- 🛡️ EL ESCUDO ---
+    if (!mounted) return;
+
+    // --- ZONA SEGURA ---
     setState(() {
       _listaCategorias = categorias;
-      _listaMarcas = marcas;
+      // Extraemos solo los nombres de las marcas
+      _listaMarcas = filtros.keys.toList();
       
-      // Seguridad: Verificamos si la marca que tenía el producto realmente existe en el catálogo.
-      // Si era una marca antigua escrita a mano que ya no existe, la reseteamos a nulo.
-      if (_marcaSeleccionada != null) {
-        final existe = _listaMarcas.any((m) => m['nombre'] == _marcaSeleccionada);
-        if (!existe) {
-          _marcaSeleccionada = null; 
+      // Seguridad Anti-Crasheo: Si estamos editando un producto que tiene una marca rara o antigua,
+      // la agregamos a la lista temporalmente para que el Dropdown no tire error en rojo.
+      if (_marcaSeleccionada != null && _marcaSeleccionada!.isNotEmpty) {
+        if (!_listaMarcas.contains(_marcaSeleccionada)) {
+          _listaMarcas.add(_marcaSeleccionada!); 
         }
       }
       
@@ -113,16 +117,18 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         return;
       }
 
+      // 1. PARSEO SEGURO
+      final precioSeguro = double.tryParse(_precioController.text) ?? 0.0;
+      final stockSeguro = int.tryParse(_stockController.text) ?? 0;
+
       final producto = Producto(
         id: widget.producto?.id,
-        nombre: _nombreController.text,
-        precio: double.parse(_precioController.text),
-        stock: int.parse(_stockController.text),
-        urlImagen: _urlImagenController.text,
-        descripcion: _descripcionController.text,
+        nombre: _nombreController.text.trim(),
+        precio: precioSeguro,
+        stock: stockSeguro,
+        urlImagen: _urlImagenController.text.trim(),
+        descripcion: _descripcionController.text.trim(),
         categoriaId: _categoriaIdSeleccionada!, 
-        
-        // --- USAMOS LA MARCA SELECCIONADA DEL DROPDOWN ---
         marca: _marcaSeleccionada, 
         modelo: _modeloController.text.trim().isEmpty ? null : _modeloController.text.trim(),
         submodelo: _submodeloController.text.trim().isEmpty ? null : _submodeloController.text.trim(),
@@ -132,13 +138,25 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         linkFotos: _linkFotosController.text.trim().isEmpty ? null : _linkFotosController.text.trim(),
       );
 
-      if (widget.producto == null) {
-        await SupabaseService.instance.insertarProducto(producto);
-      } else {
-        await SupabaseService.instance.actualizarProducto(producto);
-      }
+      try {
+        if (widget.producto == null) {
+          await SupabaseService.instance.insertarProducto(producto);
+        } else {
+          await SupabaseService.instance.actualizarProducto(producto);
+        }
 
-      Navigator.pop(context, true);
+        if (!mounted) return;
+        Navigator.pop(context, true);
+
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar: $e'), 
+            backgroundColor: Colors.red
+          ),
+        );
+      }
     }
   }
 
@@ -175,7 +193,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               // MARCA Y MODELO
               Row(
                 children: [
-                  // --- NUEVO: DROPDOWN DE MARCAS ---
+                  // --- NUEVO: DROPDOWN DE MARCAS SIMPLIFICADO ---
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       isExpanded: true,
@@ -185,10 +203,10 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                         prefixIcon: Icon(Icons.branding_watermark),
                       ),
                       value: _marcaSeleccionada,
-                      items: _listaMarcas.map((marca) {
+                      items: _listaMarcas.map((String marca) { // Magia aplicada aquí
                         return DropdownMenuItem<String>(
-                          value: marca['nombre'],
-                          child: Text(marca['nombre'], overflow: TextOverflow.ellipsis),
+                          value: marca,
+                          child: Text(marca, overflow: TextOverflow.ellipsis),
                         );
                       }).toList(),
                       onChanged: (valor) {
@@ -221,6 +239,21 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                   labelText: 'Submodelo (Opcional)', 
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.format_list_numbered)
+                ),
+              ),
+              const SizedBox(height: 15),
+              // CAMPO DE DESCRIPCIÓN (EL RECTÁNGULO)
+              TextFormField(
+                controller: _descripcionController,
+                maxLines: 3, 
+                decoration: const InputDecoration(
+                  labelText: 'Descripción del Producto',
+                  hintText: 'Ej: Máquina en excelente estado, motor monofásico...',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Padding(
+                    padding: EdgeInsets.only(bottom: 40),
+                    child: Icon(Icons.description_outlined),
+                  ),
                 ),
               ),
               const SizedBox(height: 15),

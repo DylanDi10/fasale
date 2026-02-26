@@ -18,36 +18,43 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
   String _marcaSeleccionada = 'Todas';
   String _modeloSeleccionado = 'Todos';
   
-  List<Map<String, dynamic>> _listaMarcas = [];
+  // NUEVAS VARIABLES (Más simples y sin IDs)
+  Map<String, List<String>> _filtrosDisponibles = {};
+  List<String> _listaMarcas = ['Todas'];
   List<String> _listaModelos = ['Todos'];
 
   @override
   void initState() {
     super.initState();
     _aplicarFiltrosYBusqueda();
-    _cargarMarcasCatalogo();
+    _cargarFiltrosDinamicos(); // <-- Cambio de nombre aquí
   }
 
-  void _cargarMarcasCatalogo() async {
-    final marcas = await SupabaseService.instance.obtenerMarcasCatalogo();
+  // NUEVA FUNCIÓN QUE ABSORBE LA BASE DE DATOS
+  void _cargarFiltrosDinamicos() async {
+    final filtros = await SupabaseService.instance.obtenerFiltrosDinamicos();
     if (mounted) {
-      setState(() => _listaMarcas = marcas);
+      setState(() {
+        _filtrosDisponibles = filtros;
+        // Extraemos solo las marcas para la primera lista
+        _listaMarcas = ['Todas', ...filtros.keys];
+      });
     }
   }
 
-  void _alCambiarMarca(String nuevaMarca, int? marcaId) async {
+  // FUNCIÓN SIMPLIFICADA (Ya no usa base de datos al instante, saca todo de la memoria)
+  void _alCambiarMarca(String nuevaMarca) {
     setState(() {
       _marcaSeleccionada = nuevaMarca;
-      _modeloSeleccionado = 'Todos';
-      _listaModelos = ['Todos'];    
-    });
-
-    if (marcaId != null) {
-      final modelos = await SupabaseService.instance.obtenerModelosPorMarca(marcaId);
-      if (mounted) {
-        setState(() => _listaModelos = ['Todos', ...modelos]);
+      _modeloSeleccionado = 'Todos'; // Resetea el modelo
+      
+      if (nuevaMarca == 'Todas') {
+        _listaModelos = ['Todos'];
+      } else {
+        // Cascadea los modelos al instante sin lag
+        _listaModelos = ['Todos', ...(_filtrosDisponibles[nuevaMarca] ?? [])];
       }
-    }
+    });
     _aplicarFiltrosYBusqueda();
   }
 
@@ -57,6 +64,7 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
         query: _queryBusqueda,
         marca: _marcaSeleccionada,
         modelo: _modeloSeleccionado,
+        categoriaId: null, // Ajusta esto si tu función pide categoría
       );
     });
   }
@@ -108,21 +116,16 @@ class _CatalogoScreenState extends State<CatalogoScreen> {
                       DropdownButton<String>(
                         isExpanded: true,
                         value: _marcaSeleccionada,
-                        items: [
-                          const DropdownMenuItem(value: 'Todas', child: Text('Todas')),
-                          ..._listaMarcas.map((marca) {
-                            return DropdownMenuItem<String>(
-                              value: marca['nombre'],
-                              child: Text(marca['nombre'], overflow: TextOverflow.ellipsis),
-                            );
-                          }).toList(),
-                        ],
+                        // EN EL DROPDOWN DE MARCAS:
+                        items: _listaMarcas.map((String marca) {
+                          return DropdownMenuItem<String>(
+                            value: marca,
+                            child: Text(marca, overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList(),
                         onChanged: (nuevaMarca) {
                           if (nuevaMarca != null) {
-                            int? id = nuevaMarca != 'Todas' 
-                                ? _listaMarcas.firstWhere((m) => m['nombre'] == nuevaMarca)['id'] 
-                                : null;
-                            _alCambiarMarca(nuevaMarca, id);
+                            _alCambiarMarca(nuevaMarca); 
                           }
                         },
                       ),

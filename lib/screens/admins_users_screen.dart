@@ -63,26 +63,44 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                         leading: CircleAvatar(
                           backgroundColor: Colors.orange,
                           child: Text(
-                            vendedor.username.isNotEmpty ? vendedor.username[0].toUpperCase() : "?", 
+                            // Toma la primera letra del nombre
+                            vendedor.nombreCompleto.isNotEmpty ? vendedor.nombreCompleto[0].toUpperCase() : "?",
                             style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
-                          ),
-                        ),
+                          ), 
+                        ), 
                         title: Text(
-                          vendedor.username, 
+                          // Mostramos el nombre completo hermoso en el título
+                          vendedor.nombreCompleto,
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)
+                        ), 
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4), // Un pequeño respiro visual
+                            Text(
+                              "Rol: ${vendedor.rol.toUpperCase()}", 
+                              style: const TextStyle(color: Colors.indigoAccent, fontWeight: FontWeight.w500)
+                            ),
+                            Text(
+                              vendedor.correo, 
+                              style: const TextStyle(color: Colors.grey, fontSize: 13),
+                              overflow: TextOverflow.ellipsis, // Si el correo es muy largo, pone "..." al final
+                            ),
+                          ],
                         ),
-                        subtitle: Text("Rol: ${vendedor.rol}"),
+                        isThreeLine: true, // Esto obliga a la tarjeta a hacerse más alta y cómoda
                         trailing: Icon(Icons.arrow_forward_ios, color: Colors.indigo, size: 16),
                         onTap: () {
                           Navigator.push(
-                            context, 
+                            context,
                             MaterialPageRoute(
                               builder: (_) => ReportsScreen(
-                                usuarioLogueado: widget.usuarioLogueado, // El admin 
-                                usuarioIdExterno: vendedor.id,         // El vendedor
-                                nombreVendedorExterno: vendedor.username, // Su nombre
-                              )
-                            )
+                                usuarioLogueado: widget.usuarioLogueado, 
+                                usuarioIdExterno: vendedor.id,      
+                                // Pasamos el nombre para que salga en el reporte
+                                nombreVendedorExterno: vendedor.nombreCompleto, 
+                              ) 
+                            ) 
                           );
                         },
                       ),

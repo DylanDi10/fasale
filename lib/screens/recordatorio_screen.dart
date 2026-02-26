@@ -51,10 +51,12 @@ class _RecordatoriosScreenState extends State<RecordatoriosScreen> {
       agrupados[fecha]!.add(recordatorio);
     }
 
-    setState(() {
-      _tareasPorDia = agrupados;
-      _isLoading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _tareasPorDia = agrupados;
+        _isLoading = false;
+      });
+    }
   }
 
   List<Recordatorio> _obtenerTareasParaElDia(DateTime dia) {
@@ -223,6 +225,7 @@ class _RecordatoriosScreenState extends State<RecordatoriosScreen> {
   }
   void _mostrarFormularioNuevaTarea(BuildContext context) {
     final TextEditingController _descripcionController = TextEditingController();
+    final TextEditingController _detalleController = TextEditingController(); 
     DateTime _fechaSeleccionada = _diaSeleccionado ?? DateTime.now();
     TimeOfDay _horaSeleccionada = TimeOfDay.now();
     
@@ -246,11 +249,31 @@ class _RecordatoriosScreenState extends State<RecordatoriosScreen> {
               children: [
                 const Text("Nueva Cita Comercial", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 15),
+                
+                // --- CAMPO 1: TÍTULO PRINCIPAL ---
                 TextField(
                   controller: _descripcionController,
-                  decoration: const InputDecoration(labelText: "Descripción", border: OutlineInputBorder(), prefixIcon: Icon(Icons.edit)),
+                  decoration: const InputDecoration(
+                    labelText: "Título de la cita (Ej: Visita a Taller)", 
+                    border: OutlineInputBorder(), 
+                    prefixIcon: Icon(Icons.edit)
+                  ),
                 ),
                 const SizedBox(height: 15),
+                
+                // --- CAMPO 2: DESCRIPCIÓN EXTRA ---
+                TextField(
+                  controller: _detalleController,
+                  maxLines: 2, // Permite escribir un par de líneas
+                  decoration: const InputDecoration(
+                    labelText: "Pequeña descripción (Opcional)", 
+                    hintText: "Ej: Llevar catálogos físicos...",
+                    border: OutlineInputBorder(), 
+                    prefixIcon: Icon(Icons.notes)
+                  ),
+                ),
+                const SizedBox(height: 15),
+                
                 
                 // --- EL DROPDOWN (Selector de tiempo) ---
                 const Text("Avisarme antes:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
@@ -284,38 +307,44 @@ class _RecordatoriosScreenState extends State<RecordatoriosScreen> {
                     onPressed: () async {
                       if (_descripcionController.text.isEmpty) return;
 
-                      // 1. Capturamos el Navigator ANTES de los awaits para que no se pierda el contexto
                       final navigator = Navigator.of(context);
 
-                      // 2. Unimos Fecha + Hora
                       final DateTime fechaFinal = DateTime(
                         _fechaSeleccionada.year, _fechaSeleccionada.month, _fechaSeleccionada.day,
                         _horaSeleccionada.hour, _horaSeleccionada.minute,
                       );
 
-                      // 3. Guardar en Supabase
+                      // 1. UNIMOS LOS TEXTOS PARA LA BASE DE DATOS
+                      String textoBD = _descripcionController.text;
+                      if (_detalleController.text.trim().isNotEmpty) {
+                        textoBD += "\nNota: ${_detalleController.text.trim()}"; // Lo separa con un salto de línea
+                      }
+
+                      // Guardamos en Supabase
                       await SupabaseService.instance.insertarRecordatorio(Recordatorio(
                         usuarioId: widget.usuarioActual.id!,
                         fechaProgramada: fechaFinal,
-                        descripcion: _descripcionController.text,
+                        descripcion: textoBD, // Mandamos el texto unido
                         estado: 'Pendiente',
                       ));
 
-                      // 4. Programar Alarma (Usando la variable _minutosDeAviso del dropdown)
+                      // 2. SEPARAMOS LOS TEXTOS PARA LA NOTIFICACIÓN
                       final horaAlarma = fechaFinal.subtract(Duration(minutes: _minutosDeAviso));
                       final int idNoti = DateTime.now().millisecondsSinceEpoch.remainder(100000);
                       
+                      // Si no escribió descripción, le ponemos un texto genérico
+                      String cuerpoNotificacion = _detalleController.text.trim().isEmpty 
+                          ? "Revisa tu agenda para más detalles." 
+                          : _detalleController.text.trim();
+
                       await NotificationService().programarNotificacion(
                         idNoti,
-                        "Cita en $_minutosDeAviso min ⏰",
-                        _descripcionController.text,
+                        "⏰ ${_descripcionController.text}", // El título principal
+                        cuerpoNotificacion, // La pequeña descripción
                         horaAlarma,
                       );
 
-                      // 5. Usamos la referencia segura del navigator para cerrar el modal
-                      navigator.pop(); 
-                      
-                      // 6. Recargamos la lista del calendario
+                      navigator.pop();
                       _cargarRecordatoriosDesdeBD();
                     },
                     child: const Text("AGENDAR CITA"),

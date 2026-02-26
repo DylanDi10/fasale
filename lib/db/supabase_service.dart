@@ -28,18 +28,36 @@ class SupabaseService {
     await _supabase.from('usuarios').insert(map);
   }
 
-  Future<Usuario?> login(String user, String password) async {
-    final response = await _supabase
-        .from('usuarios')
-        .select()
-        .eq('username', user)
-        .eq('password', password)
-        .maybeSingle();
+  // --- LOGIN HÍBRIDO PROFESIONAL ---
+  Future<Usuario?> login(String correo, String password) async {
+    try {
+      // 1. Pasamos por el Portero de Máxima Seguridad de Supabase
+      // Esto nos da el preciado Token (JWT) y el estado 'authenticated'
+      final AuthResponse res = await _supabase.auth.signInWithPassword(
+        email: correo,
+        password: password,
+      );
 
-    if (response != null) {
-      return Usuario.fromMap(response);
+      // 2. Si el portero nos dejó entrar (la clave es correcta)...
+      if (res.user != null) {
+        
+        // 3. Vamos a tu tabla 'usuarios' a buscar su ID interno y su ROL
+        final response = await _supabase
+            .from('usuarios')
+            .select()
+            .eq('correo', correo) // Compara el correo
+            .maybeSingle();
+
+        if (response != null) {
+          return Usuario.fromMap(response); // Retorna tu usuario con el ID Entero (1, 2, 3...)
+        }
+      }
+      return null;
+    } catch (e) {
+      // Si la contraseña está mal o el correo no existe, Supabase lanza un error
+      print("Error de autenticación: $e");
+      return null; 
     }
-    return null;
   }
 
   // Obtener lista de todos los vendedores (para el Admin)
@@ -157,7 +175,16 @@ class SupabaseService {
   }
 
   Future<void> eliminarCliente(int id) async {
-    await _supabase.from('clientes').delete().eq('id', id);
+    try {
+      await _supabase.from('clientes').delete().eq('id', id);
+    } catch (e) {
+      // Si el error es de Supabase y es exactamente el código de Llave Foránea
+      if (e is PostgrestException && e.code == '23503') {
+        throw Exception('No puedes eliminar a este cliente porque ya tiene cotizaciones registradas.');
+      }
+      // Para cualquier otro error (falla de internet, etc.)
+      throw Exception('Error al eliminar el cliente: $e');
+    }
   }
 
   // --- COTIZACIONES / VENTAS ---
@@ -231,13 +258,22 @@ class SupabaseService {
     final data = response as List<dynamic>;
     return data.map((json) => Categoria.fromMap(json)).toList();
   }
-  // --- BUSCADOR DE CLIENTES POR DNI/RUC ---
-  Future<List<Cliente>> buscarClientesPorDocumento(String documento) async {
-    final response = await _supabase
+  // --- BUSCADOR DE CLIENTES POR DNI/RUC (BLINDADO) ---
+  Future<List<Cliente>> buscarClientesPorDocumento(String documento, {bool esAdmin = false}) async {
+    int? targetId = await _getUsuarioActualId();
+    if (targetId == null) return [];
+
+    var query = _supabase
         .from('clientes')
         .select()
         .ilike('dni_ruc', '%$documento%'); // Búsqueda parcial
 
+    // EL CANDADO: Si no es admin, solo busca en SU propia cartera
+    if (!esAdmin) {
+      query = query.eq('usuario_id', targetId);
+    }
+
+    final response = await query;
     final data = response as List<dynamic>;
     return data.map((json) => Cliente.fromMap(json)).toList();
   }
@@ -261,30 +297,25 @@ class SupabaseService {
     return data.map((json) => Producto.fromMap(json)).toList();
   }
 
-  // Para llenar los filtros automáticos
-  Future<List<String>> obtenerMarcasUnicas() async {
-    final response = await _supabase.from('productos').select('marca');
-    final data = response as List<dynamic>;
-    final marcas = data.map((item) => item['marca']?.toString() ?? 'Sin Marca').toSet().toList();
-    marcas.sort();
-    return ['Todas', ...marcas];
-  }
-  // --- 1. CATÁLOGO DE MARCAS ---
-  Future<List<Map<String, dynamic>>> obtenerMarcasCatalogo() async {
-    final response = await _supabase.from('marcas').select('id, nombre').order('nombre');
-    return List<Map<String, dynamic>>.from(response);
-  }
-
-  // --- 2. MODELOS DEPENDIENTES DE LA MARCA ---
-  Future<List<String>> obtenerModelosPorMarca(int marcaId) async {
-    final response = await _supabase
-        .from('modelos')
-        .select('nombre')
-        .eq('marca_id', marcaId)
-        .order('nombre');
+  // --- FILTROS DINÁMICOS ABSORBIDOS DE LOS PRODUCTOS ---
+  Future<Map<String, List<String>>> obtenerFiltrosDinamicos() async {
+    // Consultamos la vista rápida (Asegúrate de haber ejecutado el código SQL en Supabase)
+    final response = await _supabase.from('vista_marcas_modelos').select();
     
-    final data = List<Map<String, dynamic>>.from(response);
-    return data.map((item) => item['nombre'].toString()).toList();
+    Map<String, List<String>> filtros = {};
+    
+    for (var fila in (response as List<dynamic>)) {
+      String marca = fila['marca'].toString().trim();
+      String modelo = fila['modelo'].toString().trim();
+      
+      if (!filtros.containsKey(marca)) {
+        filtros[marca] = [];
+      }
+      if (!filtros[marca]!.contains(modelo)) {
+        filtros[marca]!.add(modelo);
+      }
+    }
+    return filtros;
   }
 
   // --- 3. BUSCADOR Y FILTRO UNIFICADO ---
@@ -320,16 +351,25 @@ class SupabaseService {
     final response = await peticion;
     return (response as List).map((e) => Producto.fromMap(e)).toList();
   }
-  Future<List<Cliente>> buscarClientesGeneral(String query) async {
+  // --- BUSCADOR GENERAL AUTOCOMPLETE (BLINDADO) ---
+  Future<List<Cliente>> buscarClientesGeneral(String query, {bool esAdmin = false}) async {
     // Si está vacío, no devolvemos nada para no saturar
     if (query.isEmpty) return [];
 
-    final response = await _supabase
+    int? targetId = await _getUsuarioActualId();
+    if (targetId == null) return [];
+
+    var peticion = _supabase
         .from('clientes')
         .select()
-        .or('nombre.ilike.%$query%,dni_ruc.ilike.%$query%') // Busca en ambos campos
-        .limit(10); // Solo traemos los 10 mejores resultados para no gastar memoria
+        .or('nombre.ilike.%$query%,dni_ruc.ilike.%$query%'); // Busca en ambos campos
 
+    // EL CANDADO: Filtramos estrictamente por su ID de vendedor
+    if (!esAdmin) {
+      peticion = peticion.eq('usuario_id', targetId);
+    }
+
+    final response = await peticion.limit(10); // Límite para no saturar memoria
     final data = response as List<dynamic>;
     return data.map((json) => Cliente.fromMap(json)).toList();
   }

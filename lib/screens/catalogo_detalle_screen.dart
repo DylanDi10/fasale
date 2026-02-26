@@ -2,20 +2,45 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/product_model.dart';
 import 'visor_multimedia_screen.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:url_launcher/url_launcher.dart';
 
 class CatalogoDetalleScreen extends StatelessWidget {
   final Producto producto;
 
   const CatalogoDetalleScreen({Key? key, required this.producto}) : super(key: key);
 
-  void _abrirEnlaceInterno(BuildContext context, String? url, String titulo) {
+  void _abrirEnlaceInterno(BuildContext context, String? url, String titulo) async {
     if (url == null || url.trim().isEmpty) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => VisorMultimediaScreen(url: url.trim(), titulo: titulo),
-      ),
-    );
+    
+    final String urlLimpia = url.trim();
+
+    // --- EL ESCUDO INTELIGENTE ---
+    // 1. Si es PC (Windows, Mac, Linux) o Web, delegamos al sistema operativo
+    if (kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      final Uri uri = Uri.parse(urlLimpia);
+      try {
+        // mode: LaunchMode.externalApplication obliga a usar el navegador o programa de la PC
+        if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No se pudo abrir el enlace en la PC.'), backgroundColor: Colors.red),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al abrir el archivo.'), backgroundColor: Colors.red),
+        );
+      }
+    } 
+    // 2. Si es Celular / Tablet, ejecutamos tu código original que funciona perfecto
+    else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => VisorMultimediaScreen(url: urlLimpia, titulo: titulo),
+        ),
+      );
+    }
   }
 
   @override

@@ -5,6 +5,7 @@ import 'package:cotizaciones_app/screens/recordatorio_screen.dart';
 import 'package:cotizaciones_app/screens/report_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
 import 'login_screen.dart';
 import 'products_screen.dart';
@@ -23,7 +24,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Cotizador Textil"),
+        title: const Text("Menu Principal"),
         actions: [
           IconButton(
             icon: Icon(
@@ -43,12 +44,12 @@ class HomeScreen extends StatelessWidget {
           padding: EdgeInsets.zero,
           children: [
             UserAccountsDrawerHeader(
-              accountName: Text(usuario.username.toUpperCase()),
+              accountName: Text(usuario.nombreCompleto.toUpperCase()),
               accountEmail: Text("Rol: ${usuario.rol}"),
               currentAccountPicture: CircleAvatar(
                 backgroundColor: Colors.white,
                 child: Text(
-                  usuario.username[0].toUpperCase(),
+                  usuario.nombreCompleto[0].toUpperCase(),
                   style: TextStyle(fontSize: 40, color: Colors.indigo),
                 ),
               ),
@@ -73,9 +74,15 @@ class HomeScreen extends StatelessWidget {
               leading: Icon(Icons.logout, color: Colors.red),
               title: Text('Cerrar Sesión', style: TextStyle(color: Colors.red)),
               onTap: () async {
+                // 1. Destruimos el Token de seguridad en el servidor de Supabase
+                await Supabase.instance.client.auth.signOut();
+                
+                // 2. Limpiamos toda la memoria local del celular (SharedPreferences)
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.clear();
-
+                
+                // 3. Lo mandamos al Login y borramos el historial para que no pueda retroceder
+                if (!context.mounted) return;
                 Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(builder: (context) => LoginScreen()),
@@ -90,98 +97,108 @@ class HomeScreen extends StatelessWidget {
       body: ListView(
         padding: EdgeInsets.all(20),
         children: [
-          Text("Hola, ${usuario.username}.", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          Text("Hola, ${usuario.nombreCompleto}.", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
           Text("¿Qué quieres hacer hoy?", style: TextStyle(color: Colors.grey[600])),
           SizedBox(height: 25),
 
-          // --- LOS 6 BOTONES EN CUADRÍCULA SIMÉTRICA ---
-          GridView.count(
-            shrinkWrap: true, 
-            physics: NeverScrollableScrollPhysics(), 
-            crossAxisCount: 2,
-            crossAxisSpacing: 15,
-            mainAxisSpacing: 15,
-            children: [
-              // 1. INVENTARIO
-              _DashboardCard(
-                title: "Inventario",
-                icon: Icons.inventory_2,
-                color: Colors.blue,
-                onTap: () {
-                  Navigator.push(
-                    context, 
-                    MaterialPageRoute(builder: (context) => ProductsScreen(esAdmin: esAdmin))
-                  );
-                },
+          // --- LOS 6 BOTONES EN CUADRÍCULA RESPONSIVA ---
+          Center(
+            child: ConstrainedBox(
+              // ESCUDO 1: En PC, el menú nunca será más ancho que 800 píxeles. 
+              // En celular, como la pantalla mide menos de 400px, esto se ignora y no afecta nada.
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: GridView.count(
+                shrinkWrap: true, 
+                physics: const NeverScrollableScrollPhysics(), 
+                // ESCUDO 2: La cinta métrica. ¿Pantalla ancha? 3 columnas. ¿Celular? 2 columnas.
+                crossAxisCount: MediaQuery.of(context).size.width > 600 ? 3 : 2,
+                crossAxisSpacing: 15,
+                mainAxisSpacing: 15,
+                // Mantiene la proporción cuadrada de los botones para que no se alarguen
+                childAspectRatio: 1.0, 
+                children: [
+                  // 1. INVENTARIO
+                  _DashboardCard(
+                    title: "Inventario",
+                    icon: Icons.inventory_2,
+                    color: Colors.blue,
+                    onTap: () {
+                      Navigator.push(
+                        context, 
+                        MaterialPageRoute(builder: (context) => ProductsScreen(esAdmin: esAdmin))
+                      );
+                    },
+                  ),
+                  // 2. CLIENTES
+                  _DashboardCard(
+                    title: "Clientes",
+                    icon: Icons.people,
+                    color: Colors.orange,
+                    onTap: () {
+                      Navigator.push(
+                        context, 
+                        MaterialPageRoute(builder: (context) => ClientesScreen())
+                      );
+                    },
+                  ),
+                  // 3. COTIZACIÓN
+                  _DashboardCard(
+                    title: "Nueva Cotización",
+                    icon: Icons.shopping_cart,
+                    color: Colors.green,
+                    onTap: () {
+                      Navigator.push(
+                        context, 
+                        MaterialPageRoute(builder: (context) => NuevaVentaScreen(usuarioActual: usuario))
+                      );
+                    },
+                  ),
+                  // 4. REPORTES
+                  _DashboardCard(
+                    title: usuario.rol == 'admin' ? "Supervisar Ventas" : "Mis Reportes",
+                    icon: Icons.bar_chart,
+                    color: usuario.rol == 'admin' ? Colors.orange : Colors.purple,
+                    onTap: () {
+                      if (usuario.rol == 'admin') {
+                        Navigator.push(
+                          context, 
+                          MaterialPageRoute(builder: (context) => AdminUsersScreen(usuarioLogueado: usuario))
+                        );
+                      } else {
+                        Navigator.push(
+                          context, 
+                          MaterialPageRoute(builder: (context) => ReportsScreen(usuarioLogueado: usuario))
+                        );
+                      }
+                    },
+                  ),
+                  // 5. CATÁLOGO VIRTUAL
+                  _DashboardCard(
+                    title: "Catálogo Virtual",
+                    icon: Icons.auto_stories,
+                    color: Colors.pink, 
+                    onTap: () {
+                      Navigator.push(
+                        context, 
+                        MaterialPageRoute(builder: (context) => const CatalogoScreen())
+                      );
+                    },
+                  ),
+                  // 6. AGENDA COMERCIAL
+                  _DashboardCard(
+                    title: "Mi Agenda",
+                    icon: Icons.calendar_month,
+                    color: Colors.teal, 
+                    onTap: () {
+                      Navigator.push(
+                        context, 
+                        MaterialPageRoute(builder: (context) => RecordatoriosScreen(usuarioActual: usuario))
+                      );
+                    },
+                  ),
+                ],
               ),
-              // 2. CLIENTES
-              _DashboardCard(
-                title: "Clientes",
-                icon: Icons.people,
-                color: Colors.orange,
-                onTap: () {
-                  Navigator.push(
-                    context, 
-                    MaterialPageRoute(builder: (context) => ClientesScreen())
-                  );
-                },
-              ),
-              // 3. COTIZACIÓN
-              _DashboardCard(
-                title: "Nueva Cotización",
-                icon: Icons.shopping_cart,
-                color: Colors.green,
-                onTap: () {
-                  Navigator.push(
-                    context, 
-                    MaterialPageRoute(builder: (context) => NuevaVentaScreen(usuarioActual: usuario))
-                  );
-                },
-              ),
-              // 4. REPORTES
-              _DashboardCard(
-                title: usuario.rol == 'admin' ? "Supervisar Ventas" : "Mis Reportes",
-                icon: Icons.bar_chart,
-                color: usuario.rol == 'admin' ? Colors.orange : Colors.purple,
-                onTap: () {
-                  if (usuario.rol == 'admin') {
-                    Navigator.push(
-                      context, 
-                      MaterialPageRoute(builder: (context) => AdminUsersScreen(usuarioLogueado: usuario))
-                    );
-                  } else {
-                    Navigator.push(
-                      context, 
-                      MaterialPageRoute(builder: (context) => ReportsScreen(usuarioLogueado: usuario))
-                    );
-                  }
-                },
-              ),
-              // 5. CATÁLOGO VIRTUAL
-              _DashboardCard(
-                title: "Catálogo Virtual",
-                icon: Icons.auto_stories,
-                color: Colors.pink, 
-                onTap: () {
-                  Navigator.push(
-                    context, 
-                    MaterialPageRoute(builder: (context) => const CatalogoScreen())
-                  );
-                },
-              ),
-              // 6. AGENDA COMERCIAL
-              _DashboardCard(
-                title: "Mi Agenda",
-                icon: Icons.calendar_month,
-                color: Colors.teal, 
-                onTap: () {
-                  Navigator.push(
-                    context, 
-                    MaterialPageRoute(builder: (context) => RecordatoriosScreen(usuarioActual: usuario))
-                  );
-                },
-              ),
-            ],
+            ),
           ),
         ],
       ),
