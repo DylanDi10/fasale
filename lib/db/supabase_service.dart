@@ -14,6 +14,8 @@ class SupabaseService {
 
   final _supabase = Supabase.instance.client;
 
+  Session? get sesionActual => _supabase.auth.currentSession;
+  bool get estaLogueado => sesionActual != null && !sesionActual!.isExpired;
   // Obtener ID del usuario logueado en SharedPreferences
   Future<int?> _getUsuarioActualId() async {
     final prefs = await SharedPreferences.getInstance();
@@ -28,35 +30,42 @@ class SupabaseService {
     await _supabase.from('usuarios').insert(map);
   }
 
-  // --- LOGIN HÍBRIDO PROFESIONAL ---
+  // --- LOGIN HÍBRIDO PROFESIONAL (CON TRADUCTOR DE ERRORES) ---
   Future<Usuario?> login(String correo, String password) async {
     try {
-      // 1. Pasamos por el Portero de Máxima Seguridad de Supabase
-      // Esto nos da el preciado Token (JWT) y el estado 'authenticated'
       final AuthResponse res = await _supabase.auth.signInWithPassword(
         email: correo,
         password: password,
       );
 
-      // 2. Si el portero nos dejó entrar (la clave es correcta)...
       if (res.user != null) {
-        
-        // 3. Vamos a tu tabla 'usuarios' a buscar su ID interno y su ROL
         final response = await _supabase
             .from('usuarios')
             .select()
-            .eq('correo', correo) // Compara el correo
+            .eq('correo', correo)
             .maybeSingle();
 
         if (response != null) {
-          return Usuario.fromMap(response); // Retorna tu usuario con el ID Entero (1, 2, 3...)
+          return Usuario.fromMap(response); 
+        } else {
+          throw Exception("El Login fue exitoso, pero tu perfil no aparece en la tabla 'usuarios'.");
         }
       }
       return null;
+      
+    } on AuthException catch (e) {
+      // --- 🛡️ EL TRADUCTOR DE ERRORES DE SUPABASE ---
+      if (e.message.contains('Invalid login credentials')) {
+        // Tiramos un texto limpio (String) para que no salga la palabra "Exception:" en el cartel
+        throw 'Correo o contraseña incorrectos. Inténtalo de nuevo.'; 
+      } else if (e.message.contains('Email not confirmed')) {
+        throw 'Debes confirmar tu correo antes de iniciar sesión.';
+      } else {
+        throw 'Error de autenticación: ${e.message}';
+      }
     } catch (e) {
-      // Si la contraseña está mal o el correo no existe, Supabase lanza un error
-      print("Error de autenticación: $e");
-      return null; 
+      // Atrapamos errores generales (como falta de internet)
+      throw 'Error de conexión: Verifica tu internet.'; 
     }
   }
 
@@ -201,16 +210,20 @@ class SupabaseService {
     await _supabase.from('cotizaciones').insert(mapVenta);
   }
 
-  Future<List<Cotizacion>> obtenerVentas({int? usuarioIdEspecifico}) async {
-    int? targetId = usuarioIdEspecifico ?? await _getUsuarioActualId();
-    if (targetId == null) return [];
+  Future<List<Cotizacion>> obtenerVentas({int? usuarioIdEspecifico, bool verTodo = false}) async {
+    // 1. Iniciamos la base de la consulta (SIN el .order todavía)
+    var query = _supabase.from('cotizaciones').select();
 
-    final response = await _supabase
-        .from('cotizaciones')
-        .select()
-        .eq('usuario_id', targetId)
-        .order('fecha', ascending: false);
+    // 2. Aplicamos los filtros (.eq) PRIMERO
+    if (!verTodo) {
+      int? targetId = usuarioIdEspecifico ?? await _getUsuarioActualId();
+      if (targetId == null) return [];
+      query = query.eq('usuario_id', targetId);
+    }
 
+    // 3. Al final, aplicamos el ordenamiento y esperamos la respuesta (await)
+    final response = await query.order('fecha', ascending: false);
+    
     final data = response as List<dynamic>;
     return data.map((json) => Cotizacion.fromMap(json)).toList();
   }

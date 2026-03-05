@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart'; // <--- IMPORTANTE
 import 'package:share_plus/share_plus.dart';     // <--- IMPORTANTE
 import '../models/quote_model.dart';
 import '../models/client_model.dart';
+import 'dart:typed_data';
 
 class PdfGenerator {
   
@@ -49,7 +50,31 @@ class PdfGenerator {
       text: 'Hola ${cliente.nombre}, adjunto la cotización #${venta.id} de FASALE. Quedo atento. ⚡',
     );
   }
+  // --- NUEVA FUNCIÓN PARA PREVISUALIZAR EN PANTALLA ---
+  static Future<Uint8List> generarBytesPDF(Cotizacion venta, Cliente cliente) async {
+    final pdf = pw.Document();
 
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        build: (pw.Context context) {
+          return [
+            _buildHeader(venta, cliente),
+            pw.SizedBox(height: 20),
+            _buildTable(venta.productos),
+            pw.Divider(),
+            _buildTotal(venta),
+            pw.SizedBox(height: 40),
+            _buildFooter(),
+          ];
+        },
+      ),
+    );
+
+    // En lugar de guardarlo en el celular, simplemente devolvemos el dibujo (los bytes)
+    return await pdf.save();
+  }
   // --- TUS FUNCIONES DE DISEÑO (Las dejé igualitas) ---
 
   static pw.Widget _buildHeader(Cotizacion venta, Cliente cliente) {

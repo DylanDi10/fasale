@@ -1,5 +1,6 @@
 import 'package:cotizaciones_app/db/supabase_service.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/client_model.dart';
 import '../models/quote_model.dart'; // Importante para leer las ventas
 import 'cliente_form_screen.dart'; 
@@ -28,20 +29,24 @@ class _ClientesScreenState extends State<ClientesScreen> {
     _cargarDatosInteligentes();
   }
 
-  // --- LA MAGIA: CARGA Y CRUCE DE DATOS ---
+  // --- LA MAGIA: CARGA Y CRUCE DE DATOS (AHORA CON PODER ADMIN) ---
   Future<void> _cargarDatosInteligentes() async {
     setState(() => _cargando = true);
     
     final db = SupabaseService.instance;
+
+    // 1. Verificamos si el usuario actual es Administrador
+    final prefs = await SharedPreferences.getInstance();
+    final bool esAdmin = prefs.getBool('esAdmin') ?? false;
     
-    // 1. Traemos la lista de clientes
-    final clientes = await db.obtenerClientes();
+    // 2. Traemos la lista de clientes (¡AQUÍ APLICAMOS EL CANDADO!)
+    final clientes = await db.obtenerClientes(verTodo: esAdmin);
     
-    // 2. Traemos las ventas y filtramos solo las que son plata real (Aprobadas)
-    final ventas = await db.obtenerVentas();
+    // 3. Traemos las ventas y filtramos solo las que son plata real (Aprobadas)
+    final ventas = await db.obtenerVentas(verTodo: esAdmin);
     final ventasAprobadas = ventas.where((v) => v.estado.toLowerCase().startsWith('aprobad'));
 
-    // 3. Calculamos cuánto gastó y cuántas veces compró cada cliente
+    // 4. Calculamos cuánto gastó y cuántas veces compró cada cliente
     Map<int, double> gastos = {};
     Map<int, int> compras = {};
     

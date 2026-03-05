@@ -20,7 +20,6 @@ class _LoginScreenState extends State<LoginScreen> {
   String _errorMessage = '';
 
   void _login() async {
-    // Si el correo no tiene formato válido, no avanza
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -28,41 +27,42 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = '';
     });
 
-    // --- LA CONEXIÓN AL NUEVO SISTEMA SEGURO ---
-    Usuario? usuarioEncontrado = await SupabaseService.instance.login(
-      _emailController.text.trim(), 
-      _passController.text.trim()
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      _isLoading = false; 
-    });
-
-    if (usuarioEncontrado != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('usuario_id', usuarioEncontrado.id!);
-      
-      // Guardamos el correo para mostrarlo en el menú lateral o perfil
-      await prefs.setString('nombre_vendedor', usuarioEncontrado.nombreCompleto);
-
-      // --- EL NUEVO CANDADO DE SEGURIDAD ---
-      // Ahora validamos por el 'rol' de la base de datos, no por el nombre
-      bool permisoAdmin = (usuarioEncontrado.rol.toLowerCase() == 'admin'); 
-      
-      await prefs.setBool('esAdmin', permisoAdmin);
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => HomeScreen(usuario: usuarioEncontrado, esAdmin: permisoAdmin), 
-        ),
+    try {
+      // Intentamos hacer el login
+      Usuario? usuarioEncontrado = await SupabaseService.instance.login(
+        _emailController.text.trim(), 
+        _passController.text.trim()
       );
-    } else {
+
+      if (!mounted) return;
+
+      if (usuarioEncontrado != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('usuario_id', usuarioEncontrado.id!);
+        await prefs.setString('nombre_vendedor', usuarioEncontrado.nombreCompleto);
+        
+        bool permisoAdmin = (usuarioEncontrado.rol.toLowerCase() == 'admin'); 
+        await prefs.setBool('esAdmin', permisoAdmin);
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => HomeScreen(usuario: usuarioEncontrado, esAdmin: permisoAdmin), 
+          ),
+        );
+      }
+    } catch (e) {
+      // SI ALGO EXPLOTA EN LA BASE DE DATOS, LO MOSTRAMOS AQUÍ
+      if (!mounted) return;
       setState(() {
-        _errorMessage = 'Correo o contraseña incorrectos';
+        _errorMessage = "ERROR REAL: $e";
       });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false; 
+        });
+      }
     }
   }
 

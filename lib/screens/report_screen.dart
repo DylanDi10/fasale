@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:cotizaciones_app/db/supabase_service.dart';
 import 'package:cotizaciones_app/models/client_model.dart';
+import 'package:cotizaciones_app/models/product_model.dart';
 import 'package:cotizaciones_app/utils/pdf_generator.dart';
 import 'package:cotizaciones_app/widgets/empty_state.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,8 @@ import '../db/database_helper.dart';
 import '../models/quote_model.dart';
 import '../models/user_model.dart';
 import 'nueva_venta_screen.dart';
+import 'package:printing/printing.dart';
+
 
 class ReportsScreen extends StatefulWidget {
   final Usuario usuarioLogueado;
@@ -27,7 +30,8 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen> {
-  bool esAdmin = true;
+  
+  bool _procesandoEstado = false; // Nuevo: Para bloquear clics repetidos
   DateTime? _fechaFiltro; // Si es null, mostramos todas
   double _totalGanancias = 0.0;
 
@@ -44,38 +48,65 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   void _cargarDatos() async {
-    final db = SupabaseService.instance;
-    List<Cotizacion> ventas;
-
-    // 1. BLINDAJE: Verificamos si hay un filtro de fecha activo
-    if (_fechaFiltro != null) {
-      // Si hay fecha, solo recargamos las de ese día específico
-      ventas = await db.obtenerVentasPorDia(
-        _fechaFiltro!,
-        usuarioId: widget.usuarioIdExterno,
-      );
-    } else {
-      // Si no hay fecha, traemos todo el historial normal
-      ventas = await db.obtenerVentas(
-        usuarioIdEspecifico: widget.usuarioIdExterno,
-      );
+    // --- 1. EL ESCUDO ANTI-CRASH DE SESIÓN ---
+    if (!SupabaseService.instance.estaLogueado) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Tu sesión ha expirado por inactividad. Por favor, reinicia la app."),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      return; // Detenemos la función aquí mismo para que no explote
     }
 
-    final clientes = await db.obtenerClientes(
-      verTodo: widget.usuarioIdExterno != null || widget.usuarioLogueado.rol == 'admin',
-    );
+    // --- 2. EL PARACAÍDAS (TRY-CATCH) ---
+    try {
+      final db = SupabaseService.instance;
+      List<Cotizacion> ventas;
 
-    Map<int, String> mapaNombres = {};
-    for (var c in clientes) {
-      if (c.id != null) mapaNombres[c.id!] = c.nombre;
-    }
+      // Verificamos si hay un filtro de fecha activo
+      if (_fechaFiltro != null) {
+        ventas = await db.obtenerVentasPorDia(
+          _fechaFiltro!,
+          usuarioId: widget.usuarioIdExterno,
+        );
+      } else {
+        ventas = await db.obtenerVentas(
+          usuarioIdEspecifico: widget.usuarioIdExterno,
+        );
+      }
 
-    if (mounted) {
-      setState(() {
-        _nombresClientes = mapaNombres;
-        _ventasOriginales = ventas; // Guardamos la data pura
-      });
-      _aplicarFiltrosLocales(); // Aplicamos los cálculos y el filtro de "Solo Aprobadas"
+      final clientes = await db.obtenerClientes(
+        verTodo: widget.usuarioIdExterno != null || widget.usuarioLogueado.rol == 'admin',
+      );
+
+      Map<int, String> mapaNombres = {};
+      for (var c in clientes) {
+        if (c.id != null) mapaNombres[c.id!] = c.nombre;
+      }
+
+      if (mounted) {
+        setState(() {
+          _nombresClientes = mapaNombres;
+          _ventasOriginales = ventas; 
+        });
+        _aplicarFiltrosLocales(); 
+      }
+
+    } catch (e) {
+      // 3. SI SUPABASE RECHAZA LA PETICIÓN, ATRAPAMOS EL ERROR AQUÍ
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(
+            content: const Text("Error de conexión o sesión expirada. Intenta reiniciar."),
+            backgroundColor: Colors.orange[800],
+          ),
+        );
+      }
+      print("Error al cargar datos: $e");
     }
   }
 
@@ -524,14 +555,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
       print("No se pudo abrir WhatsApp");
     }
   }
-
   void _mostrarDialogoWhatsApp(BuildContext context, Cotizacion venta) async {
     TextEditingController _numeroController = TextEditingController();
 
-    // Intentamos buscar el teléfono del cliente si ya existe en la BD
-    Cliente? cliente = await SupabaseService.instance.obtenerClientePorId(
-      venta.clienteId,
-    );
+    Cliente? cliente = await SupabaseService.instance.obtenerClientePorId(venta.clienteId);
     if (cliente != null && cliente.telefono != null) {
       _numeroController.text = cliente.telefono!;
     }
@@ -539,10 +566,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     showDialog(
       context: context,
       builder: (ctxDialog) => AlertDialog(
-        title: const Text(
-          "Enviar a WhatsApp",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text("Enviar a WhatsApp", style: TextStyle(fontWeight: FontWeight.bold)),
         content: TextField(
           controller: _numeroController,
           keyboardType: TextInputType.phone,
@@ -561,14 +585,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
             onPressed: () async {
               String numero = _numeroController.text;
               if (numero.isNotEmpty) {
-                Navigator.pop(ctxDialog); // Cerramos el dialogo
-                Navigator.pop(context); // Cerramos el modal de detalle
+                Navigator.pop(ctxDialog); 
+                Navigator.pop(context); 
 
-                // 1. Abrimos el chat de WhatsApp con el saludo
                 await _enviarWhatsAppSinGuardar(numero, "");
-
-                // 2. Un segundo después, disparamos tu función actual que abre el PDF
-                // para que el vendedor solo le dé a "Compartir" hacia el chat que acaba de abrir.
                 await Future.delayed(const Duration(seconds: 1));
                 if (cliente != null) {
                   await PdfGenerator.generarYCompartirPDF(venta, cliente);
@@ -582,6 +602,205 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ),
     );
   }
+  // --- NUEVA FUNCIÓN: DIÁLOGO DE MULTIMEDIA ---
+  // --- NUEVA FUNCIÓN: DIÁLOGO DE MULTIMEDIA A LA CARTA ---
+  void _mostrarDialogoMultimedia(BuildContext context, Cotizacion venta) async {
+    TextEditingController _numeroController = TextEditingController();
+
+    // 1. ESTADO A LA CARTA: Creamos una "memoria" para guardar las opciones de CADA producto
+    Map<int, Map<String, bool>> selecciones = {};
+    for (int i = 0; i < venta.productos.length; i++) {
+      // Por defecto, marcamos todo activo para cada máquina
+      selecciones[i] = {'fotos': true, 'video': true, 'pdf': true};
+    }
+
+    Cliente? cliente = await SupabaseService.instance.obtenerClientePorId(venta.clienteId);
+    if (cliente != null && cliente.telefono != null) {
+      _numeroController.text = cliente.telefono!;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctxDialog) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text("Enviar Multimedia", style: TextStyle(fontWeight: FontWeight.bold)),
+              // El ScrollView evita que el teclado aplaste la pantalla
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _numeroController,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: "Número de WhatsApp",
+                        prefixIcon: Icon(Icons.chat_outlined, color: Colors.green), 
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text("Selecciona qué enviar por máquina:", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+
+                    // 2. GENERAMOS LA LISTA DINÁMICA DE PRODUCTOS
+                    ...List.generate(venta.productos.length, (index) {
+                      final item = venta.productos[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Nombre de la máquina
+                            Text("⚙️ ${item['nombre']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.indigo)),
+                            // Sus 3 opciones a medida
+                            Wrap(
+                              spacing: 0,
+                              runSpacing: -10, 
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Checkbox(
+                                      visualDensity: VisualDensity.compact,
+                                      value: selecciones[index]!['fotos'],
+                                      activeColor: Colors.orange,
+                                      onChanged: (v) => setStateDialog(() => selecciones[index]!['fotos'] = v!),
+                                    ),
+                                    const Text("Fotos", style: TextStyle(fontSize: 12)),
+                                  ],
+                                ),
+                                const SizedBox(width: 10),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Checkbox(
+                                      visualDensity: VisualDensity.compact,
+                                      value: selecciones[index]!['video'],
+                                      activeColor: Colors.orange,
+                                      onChanged: (v) => setStateDialog(() => selecciones[index]!['video'] = v!),
+                                    ),
+                                    const Text("Video", style: TextStyle(fontSize: 12)),
+                                  ],
+                                ),
+                                const SizedBox(width: 10),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Checkbox(
+                                      visualDensity: VisualDensity.compact,
+                                      value: selecciones[index]!['pdf'],
+                                      activeColor: Colors.orange,
+                                      onChanged: (v) => setStateDialog(() => selecciones[index]!['pdf'] = v!),
+                                    ),
+                                    const Text("PDF", style: TextStyle(fontSize: 12)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 10),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctxDialog),
+                  child: const Text("CANCELAR", style: TextStyle(color: Colors.grey)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+                  onPressed: () async {
+                    String numero = _numeroController.text.trim();
+                    if (numero.isEmpty) return;
+
+                    Navigator.pop(ctxDialog); 
+                    Navigator.pop(context); 
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Armando catálogo multimedia a medida... ⏳')),
+                    );
+
+                    final catalogoCompleto = await SupabaseService.instance.obtenerProductos();
+
+                    String mensaje = "📌 *Catálogo Multimedia - Cotización #${venta.id}*\nHola ${cliente?.nombre ?? ''}, aquí le comparto el material solicitado:\n\n";
+                    bool tieneLinks = false;
+
+                    // 3. ARMAMOS EL MENSAJE LEYENDO MÁQUINA POR MÁQUINA
+                    for (int i = 0; i < venta.productos.length; i++) {
+                      var item = venta.productos[i];
+                      
+                      // Vemos qué pidió el usuario para ESTA máquina en específico
+                      bool enviarFotos = selecciones[i]!['fotos']!;
+                      bool enviarVideo = selecciones[i]!['video']!;
+                      bool enviarPdf = selecciones[i]!['pdf']!;
+
+                      // Si le quitó los 3 checks a una máquina, nos la saltamos por completo
+                      if (!enviarFotos && !enviarVideo && !enviarPdf) continue;
+
+                      Producto? prodReal;
+                      try {
+                        prodReal = catalogoCompleto.firstWhere((p) => p.id == int.parse(item['id'].toString()));
+                      } catch (e) {
+                        continue; 
+                      }
+
+                      bool linksProductoActual = false;
+                      String subMensaje = "⚙️ *${prodReal.nombre}*\n";
+                      
+                      if (enviarFotos && prodReal.linkFotos != null && prodReal.linkFotos!.isNotEmpty) {
+                        subMensaje += "📷 *Fotos:* ${prodReal.linkFotos}\n";
+                        linksProductoActual = true;
+                      }
+                      if (enviarVideo && prodReal.linkVideo != null && prodReal.linkVideo!.isNotEmpty) {
+                        subMensaje += "🎥 *Video:* ${prodReal.linkVideo}\n";
+                        linksProductoActual = true;
+                      }
+                      if (enviarPdf && prodReal.linkPdf != null && prodReal.linkPdf!.isNotEmpty) {
+                        subMensaje += "📄 *Ficha:* ${prodReal.linkPdf}\n";
+                        linksProductoActual = true;
+                      }
+                      
+                      // Si esta máquina tuvo al menos un link seleccionado y válido, la metemos al mensaje final
+                      if (linksProductoActual) {
+                        mensaje += subMensaje + "\n";
+                        tieneLinks = true;
+                      }
+                    }
+
+                    if (!tieneLinks) {
+                      mensaje += "_No se seleccionaron o no se encontraron links para las opciones indicadas._";
+                    }
+
+                    String numeroLimpio = numero.replaceAll(RegExp(r'[^0-9]'), '');
+                    if (numeroLimpio.length == 9) numeroLimpio = '51$numeroLimpio'; 
+
+                    // 4. FORZAMOS LA APERTURA DE WHATSAPP
+                    try {
+                      final Uri url = Uri.parse("https://wa.me/$numeroLimpio?text=${Uri.encodeComponent(mensaje)}");
+                      await launchUrl(url, mode: LaunchMode.externalApplication);
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("No se pudo abrir WhatsApp. Verifica tu conexión.")),
+                      );
+                    }
+                  },
+                  child: const Text("ENVIAR"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  
 
   void _mostrarDetalleVenta(BuildContext context, Cotizacion venta) {
     showModalBottomSheet(
@@ -590,7 +809,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       builder: (ctx) {
         return Container(
           padding: EdgeInsets.all(20),
-          height: 650,
+          height: MediaQuery.of(context).size.height * 0.85, // Ajuste automático
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -704,7 +923,58 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
               // --- BOTONES DE ACCIÓN ---
 
-              // 1. BOTÓN EDITAR (Igual que antes)
+              // --- NUEVO BOTÓN PREVISUALIZAR (EL OJO) ---
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueGrey[800], // Un color elegante y neutro
+                    foregroundColor: Colors.white,
+                    minimumSize: Size(double.infinity, 50),
+                  ),
+                  icon: Icon(Icons.remove_red_eye),
+                  label: Text("PREVISUALIZAR COTIZACIÓN"),
+                  onPressed: () async {
+                    // 1. Cerramos el menú inferior
+                    Navigator.pop(ctx);
+                    
+                    // 2. Buscamos al cliente para armar el documento
+                    Cliente? cliente = await SupabaseService.instance.obtenerClientePorId(venta.clienteId);
+                    
+                    if (cliente != null) {
+                      // 3. Abrimos la nueva pantalla de visualización
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PrevisualizarPdfScreen(venta: venta, cliente: cliente),
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Error: No se encontró al cliente")),
+                      );
+                    }
+                  },
+                ),
+              ),
+              SizedBox(height: 10),
+              // 3. NUEVO BOTÓN: COMPARTIR MULTIMEDIA
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange[600],
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 50),
+                  ),
+                  icon: const Icon(Icons.perm_media_rounded),
+                  label: const Text("COMPARTIR LINKS MULTIMEDIA"),
+                  onPressed: () {
+                    _mostrarDialogoMultimedia(context, venta);
+                  },
+                ),
+              ),
+              const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -811,67 +1081,108 @@ class _ReportsScreenState extends State<ReportsScreen> {
     String nuevoEstado,
     Color color,
   ) {
-    // Blindaje: Comparamos todo en minúsculas y solo las primeras 7 letras
-    // ("Aprobad") para ignorar si termina en A o en O.
+    // 1. Verificamos si es admin real
+    final bool usuarioEsAdmin = widget.usuarioLogueado.rol == 'admin';
+    
     bool esEstadoActual = venta.estado.toLowerCase().startsWith(
       nuevoEstado.toLowerCase().substring(0, 7),
     );
 
     return InkWell(
-      // Si ya está en ese estado, onTap es NULL y el botón queda desactivado
-      onTap: esEstadoActual
+      // BLOQUEO MAESTRO: 
+      // Si ya es el estado actual -> Bloqueado
+      // Si NO es admin -> Bloqueado
+      // Si ya hay un proceso en marcha -> Bloqueado
+      onTap: (esEstadoActual || !usuarioEsAdmin || _procesandoEstado)
           ? null
           : () async {
-              // --- LÓGICA DE STOCK AQUÍ ---
-              if (nuevoEstado.startsWith('Aprobad') &&
-                  !venta.estado.toLowerCase().startsWith('aprobad')) {
-                // Descuenta stock y cambia estado
-                // Asegúrate de tener la variable esAdmin disponible en esa pantalla también
-                // Llamamos a la función a través de la instancia de tu servicio
-                await SupabaseService.instance.aprobarCotizacionYDescontarStock(
-                  venta,
-                  esAdmin: esAdmin,
-                );
-              } else {
-                // Solo actualiza texto
-                Cotizacion ventaActualizada = Cotizacion(
-                  id: venta.id,
-                  clienteId: venta.clienteId,
-                  usuarioId: venta.usuarioId,
-                  fecha: venta.fecha,
-                  total: venta.total,
-                  productos: venta.productos,
-                  estado: nuevoEstado,
-                );
-                await SupabaseService.instance.actualizarCotizacion(
-                  ventaActualizada,
-                );
-              }
+              setState(() => _procesandoEstado = true); // Cerramos el escudo
 
-              Navigator.pop(ctx);
-              _cargarDatos();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text("Estado cambiado a $nuevoEstado"),
-                  backgroundColor: color,
-                ),
-              );
+              try {
+                if (nuevoEstado.startsWith('Aprobad') &&
+                    !venta.estado.toLowerCase().startsWith('aprobad')) {
+                  await SupabaseService.instance.aprobarCotizacionYDescontarStock(
+                    venta,
+                    esAdmin: usuarioEsAdmin,
+                  );
+                } else {
+                  Cotizacion ventaActualizada = Cotizacion(
+                    id: venta.id,
+                    clienteId: venta.clienteId,
+                    usuarioId: venta.usuarioId,
+                    fecha: venta.fecha,
+                    total: venta.total,
+                    productos: venta.productos,
+                    estado: nuevoEstado,
+                  );
+                  await SupabaseService.instance.actualizarCotizacion(ventaActualizada);
+                }
+
+                if (mounted) Navigator.pop(ctx);
+                _cargarDatos();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Estado cambiado a $nuevoEstado"), backgroundColor: color),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Error al cambiar estado"), backgroundColor: Colors.red),
+                );
+              } finally {
+                if (mounted) setState(() => _procesandoEstado = false); // Abrimos el escudo
+              }
             },
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: esEstadoActual ? color : color.withOpacity(0.1),
-          border: Border.all(color: color),
+          // Si está bloqueado por no ser admin, bajamos la opacidad para que se vea "desactivado"
+          color: esEstadoActual ? color : color.withOpacity(usuarioEsAdmin ? 0.1 : 0.05),
+          border: Border.all(color: usuarioEsAdmin ? color : Colors.grey),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
           nuevoEstado,
           style: TextStyle(
-            color: esEstadoActual ? Colors.white : color,
+            color: esEstadoActual ? Colors.white : (usuarioEsAdmin ? color : Colors.grey),
             fontWeight: FontWeight.bold,
           ),
         ),
       ),
     );
   }
+  
+}
+// --- NUEVA PANTALLA: VISOR DE PDF ---
+
+class PrevisualizarPdfScreen extends StatelessWidget {
+  final Cotizacion venta;
+  final Cliente cliente;
+
+  const PrevisualizarPdfScreen({Key? key, required this.venta, required this.cliente}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Vista Previa del Documento"),
+        backgroundColor: Colors.indigo[900],
+        foregroundColor: Colors.white,
+      ),
+      // PdfPreview es la magia que crea el lienzo interactivo
+      body: PdfPreview(
+        // Desactivamos botones extra para mantenerlo simple y profesional
+        allowSharing: false,
+        allowPrinting: true,
+        canChangeOrientation: false,
+        canChangePageFormat: false,
+        canDebug: false, // <--- ESTA LÍNEA DESAPARECE EL INTERRUPTOR
+        // Aquí conectamos con tu generador de PDF (necesitaremos ajustar esto)
+        build: (format) async {
+          // Por ahora devolvemos un documento en blanco para probar que la pantalla abre
+          // En el siguiente paso lo conectaremos con tu diseño real.
+          return await PdfGenerator.generarBytesPDF(venta, cliente);
+        },
+      ),
+    );
+  }
+  
 }

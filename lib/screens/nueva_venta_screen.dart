@@ -40,30 +40,63 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
   }
 
   void _cargarDatos() async {
+    // --- 1. EL ESCUDO ANTI-CRASH DE SESIÓN ---
+    if (!SupabaseService.instance.estaLogueado) {
+      if (mounted) {
+        setState(() => _estaCargando = false); // Apagamos el circulito de carga
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Tu sesión ha expirado por inactividad. Por favor, reinicia la app."),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      return; // Abortamos misión inmediatamente
+    }
+
     bool esAdmin = widget.usuarioActual.rol == 'admin';
     
-    // --- LAS PAUSAS ASÍNCRONAS ---
-    final clientes = await SupabaseService.instance.obtenerClientes(
-      verTodo: esAdmin,
-      usuarioIdEspecifico: esAdmin ? null : widget.cotizacionAEditar?.usuarioId,
-    );
-    final productos = await SupabaseService.instance.obtenerProductos();
+    // --- 2. EL PARACAÍDAS ---
+    try {
+      // --- LAS PAUSAS ASÍNCRONAS ---
+      final clientes = await SupabaseService.instance.obtenerClientes(
+        verTodo: esAdmin,
+        usuarioIdEspecifico: esAdmin ? null : widget.cotizacionAEditar?.usuarioId,
+      );
+      final productos = await SupabaseService.instance.obtenerProductos();
 
-    // --- 🛡️ EL ESCUDO ---
-    // Si el vendedor cerró la pantalla mientras cargaban los datos, abortamos.
-    if (!mounted) return;
+      // --- 🛡️ EL ESCUDO DE NAVEGACIÓN ---
+      if (!mounted) return;
 
-    // --- ZONA SEGURA ---
-    setState(() {
-      _listaClientes = clientes;
-      _listaProductos = productos;
-    });
+      // --- ZONA SEGURA ---
+      setState(() {
+        _listaClientes = clientes;
+        _listaProductos = productos;
+      });
 
-    if (widget.cotizacionAEditar != null) {
-      _prepararEdicion(clientes, productos);
+      if (widget.cotizacionAEditar != null) {
+        _prepararEdicion(clientes, productos);
+      }
+      
+    } catch (e) {
+      // Si el servidor de Supabase rechaza la petición por cualquier otro motivo
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text("Problemas de conexión o sesión caducada. Intenta reiniciar."),
+            backgroundColor: Colors.orange[800],
+          ),
+        );
+      }
+      print("Error al cargar datos de nueva cotización: $e");
+    } finally {
+      // --- 3. LIMPIEZA OBLIGATORIA ---
+      // Pase lo que pase (éxito o error), siempre quitamos la pantalla de carga al final
+      if (mounted) {
+        setState(() => _estaCargando = false);
+      }
     }
-    
-    setState(() => _estaCargando = false);
   }
 
   void _prepararEdicion(List<Cliente> clientes, List<Producto> productos) {
@@ -77,17 +110,26 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
 
     for (var item in widget.cotizacionAEditar!.productos) {
       try {
-        Producto p = productos.firstWhere((prod) => prod.id == item['id']);
+        // 1. BLINDAJE: Forzamos que el ID siempre sea un número entero 
+        // para que no falle la búsqueda en el inventario.
+        int productoId = int.parse(item['id'].toString());
+        
+        // Buscamos el producto real (que ya trae su imagen)
+        Producto p = productos.firstWhere((prod) => prod.id == productoId);
         _carrito.add({'producto': p, 'cantidad': item['cantidad']});
+        
       } catch (e) {
+        // 2. Si el producto fue borrado del inventario, creamos el temporal...
+        // ¡Y AHORA SÍ LE RESCATAMOS LA IMAGEN GUARDADA!
         Producto pTemporal = Producto(
-          id: item['id'],
+          id: int.parse(item['id'].toString()),
           nombre: item['nombre'],
           descripcion: "Producto de cotización antigua",
           categoriaId: 0,
           precio: (item['precio_unitario'] as num).toDouble(),
           stock: 999,
           nombreCategoria: "Desconocida",
+          urlImagen: item['imagen'], // <--- LA MAGIA ESTÁ AQUÍ
         );
         _carrito.add({'producto': pTemporal, 'cantidad': item['cantidad']});
       }
@@ -317,12 +359,20 @@ class _NuevaVentaScreenState extends State<NuevaVentaScreen> {
                     ),
                   ),
                   child: Autocomplete<Cliente>(
+                    initialValue: TextEditingValue(text: _clienteSeleccionado?.nombre ?? ''),
                     optionsBuilder: (TextEditingValue textEditingValue) async {
                       if (textEditingValue.text.length < 2) {
                         return const Iterable<Cliente>.empty();
                       }
-                      // Llama a Supabase mientras el vendedor escribe
-                      return await SupabaseService.instance.buscarClientesGeneral(textEditingValue.text);
+                      
+                      // ¡AQUÍ ESTÁ LA CLAVE! Le avisamos al buscador si somos Admin
+                      bool esAdmin = widget.usuarioActual.rol == 'admin';
+                      
+                      // Llama a Supabase mientras el vendedor escribe, pasando el permiso
+                      return await SupabaseService.instance.buscarClientesGeneral(
+                        textEditingValue.text, 
+                        esAdmin: esAdmin
+                      );
                     },
                     displayStringForOption: (Cliente option) => option.nombre,
                     optionsViewBuilder: (context, onSelected, options) {
